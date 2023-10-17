@@ -35,10 +35,10 @@ class MainCtrlUI(tk.Frame):
         self.master.title("Main Controlling"); self.screen_width = self.master.winfo_screenwidth()
         self.screen_height = self.master.winfo_screenheight()
         # Below - put the main window on the (+x, +y) coordinate away from the top left of the screen
-        self.master.geometry(f"+{self.screen_width//4}+{self.screen_height//5}")
-        # self.master.resizable(False, False)  # prevent resizing of the master window
-        # Variables default values
-        self.adjust_sizes_win = None
+        self.master.geometry(f"320x240+{self.screen_width//4}+{self.screen_height//5}")
+
+        # Default values of variables
+        self.adjust_sizes_win = None; self.windows_resizable = True
 
         # Adding menu bar to the master window (root window)
         self.menubar = tk.Menu(self.master); self.master.config(menu=self.menubar)
@@ -56,13 +56,13 @@ class MainCtrlUI(tk.Frame):
 
         """
         if self.adjust_sizes_win is None:
-            self.adjust_sizes_win = AdjustSizesWin(master_widget=self)
+            self.adjust_sizes_win = AdjustSizesWin(master_widget=self, windows_resizable=self.windows_resizable)
         else:
             if self.adjust_sizes_win.winfo_exists():
                 self.adjust_sizes_win.destroy(); self.adjust_sizes_win = None
             else:
                 del self.adjust_sizes_win; self.adjust_sizes_win = None
-                self.adjust_sizes_win = AdjustSizesWin(master_widget=self)
+                self.adjust_sizes_win = AdjustSizesWin(master_widget=self, windows_resizable=self.windows_resizable)
 
 
 # %% Wrapper UI class
