@@ -9,10 +9,12 @@ Main GUI script.
 """
 
 # %% Global imports
-import tkinter as tk
+from tkinter import Frame, Menu, Tk
 import platform
 import ctypes
 from pathlib import Path
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg  # import canvas container from matplotlib for tkinter
+import matplotlib.figure as pltFigure   # matplotlib figure for showing images
 
 # %% Local imports
 if __name__ == "__main__" or __name__ == Path(__file__).stem or __name__ == "__mp_main__":
@@ -25,7 +27,7 @@ __start_message__ = "Main controlling GUI boiler-plate class, MIT licensed, 2023
 
 
 # %% GUI based on tkinter.Frame
-class MainCtrlUI(tk.Frame):
+class MainCtrlUI(Frame):
     """GUI based on tkinter.Frame composing all main controls."""
 
     def __init__(self, master):
@@ -35,16 +37,26 @@ class MainCtrlUI(tk.Frame):
         self.master.title("Main Controlling"); self.screen_width = self.master.winfo_screenwidth()
         self.screen_height = self.master.winfo_screenheight()
         # Below - put the main window on the (+x, +y) coordinate away from the top left of the screen
-        self.master.geometry(f"320x240+{self.screen_width//4}+{self.screen_height//5}")
+        self.master.geometry(f"+{self.screen_width//4}+{self.screen_height//5}")
 
         # Default values of variables
         self.adjust_sizes_win = None; self.windows_resizable = True
+        self.figure_size_w = 5.6; self.figure_size_h = 5.0  # default width and height, measured in inches
 
         # Adding menu bar to the master window (root window)
-        self.menubar = tk.Menu(self.master); self.master.config(menu=self.menubar)
-        self.actions_menu = tk.Menu(master=self.menubar, tearoff=0)  # tearoff options removes link for opening a Menu in an additional window
+        self.menubar = Menu(self.master); self.master.config(menu=self.menubar)
+        self.actions_menu = Menu(master=self.menubar, tearoff=0)  # tearoff options removes link for opening a Menu in an additional window
         self.actions_menu.add_command(label="Adjust Sizes", command=self.adjust_sizes)
         self.menubar.add_cascade(label="Actions", menu=self.actions_menu)
+
+        # Figure for showing of images
+        self.image_figure = pltFigure.Figure(figsize=(self.figure_size_w, self.figure_size_h))  # empty figure with default sizes (WxH)
+        self.image_canvas = FigureCanvasTkAgg(self.image_figure, master=self); self.plot_widget = self.image_canvas.get_tk_widget()
+
+        # Put widgets, buttons on the Frame (window)
+        self.padx = 8; self.pady = 8
+        self.plot_widget.grid(row=1, rowspan=6, column=1, columnspan=6, padx=self.padx, pady=self.pady)
+        self.grid(); self.master.update()  # for showing all placed widgets in the grid layout
 
     def adjust_sizes(self):
         """
@@ -64,6 +76,20 @@ class MainCtrlUI(tk.Frame):
                 del self.adjust_sizes_win; self.adjust_sizes_win = None
                 self.adjust_sizes_win = AdjustSizesWin(master_widget=self, windows_resizable=self.windows_resizable)
 
+    def reinitialize_image_figure(self):
+        """
+        Reinitialize the figure with update sizes.
+
+        Returns
+        -------
+        None.
+
+        """
+        self.plot_widget.destroy(); del self.image_canvas; del self.image_figure   # delete widget and variables
+        self.image_figure = pltFigure.Figure(figsize=(self.figure_size_w, self.figure_size_h))  # empty figure with default sizes (WxH)
+        self.image_canvas = FigureCanvasTkAgg(self.image_figure, master=self); self.plot_widget = self.image_canvas.get_tk_widget()
+        self.plot_widget.grid(row=1, rowspan=6, column=1, columnspan=6, padx=self.padx, pady=self.pady); self.master.update()
+
 
 # %% Wrapper UI class
 class WrapperMainUI():
@@ -72,7 +98,7 @@ class WrapperMainUI():
     def __init__(self):
         print(__start_message__)
         WrapperMainUI.fix_blurring()  # fix blurring of UIs
-        self.tk_root = tk.Tk()  # main tkinter class
+        self.tk_root = Tk()  # main tkinter class, toplevel window
 
     def launch(self):
         """
