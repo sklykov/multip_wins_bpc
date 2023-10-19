@@ -85,7 +85,7 @@ class MainCtrlUI(Frame):
         None.
 
         """
-        self.plot_widget.destroy(); del self.image_canvas; del self.image_figure   # delete widget and variables
+        self.plot_widget.destroy(); self.image_canvas = None; self.image_figure = None   # delete widget and variables by deleting references
         self.image_figure = pltFigure.Figure(figsize=(self.figure_size_w, self.figure_size_h))  # empty figure with default sizes (WxH)
         self.image_canvas = FigureCanvasTkAgg(self.image_figure, master=self); self.plot_widget = self.image_canvas.get_tk_widget()
         self.plot_widget.grid(row=1, rowspan=6, column=1, columnspan=6, padx=self.padx, pady=self.pady); self.master.update()
