@@ -47,7 +47,7 @@ class AdjustSizesWin(Toplevel):
         self.width_sel_frame = Frame(master=self.height_width_frame)
         self.width_label = Label(master=self.width_sel_frame, text="Figure width: ")
         self.width_value = DoubleVar(); self.width_value.set(self.master.figure_size_w)
-        self.width_selector = Spinbox(master=self.width_sel_frame, from_=2.0, to=12.0, increment=0.2, width=4,
+        self.width_selector = Spinbox(master=self.width_sel_frame, from_=self.min_w_h, to=self.max_w_h, increment=0.2, width=4,
                                       textvariable=self.width_value, command=self.width_changed_by_arrow)
         self.width_label.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
         self.width_selector.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
@@ -56,7 +56,7 @@ class AdjustSizesWin(Toplevel):
         self.height_sel_frame = Frame(master=self.height_width_frame)
         self.height_label = Label(master=self.height_sel_frame, text="Figure height: ")
         self.height_value = DoubleVar(); self.height_value.set(self.master.figure_size_h)
-        self.height_selector = Spinbox(master=self.height_sel_frame, from_=2.0, to=12.0, increment=0.2, width=4,
+        self.height_selector = Spinbox(master=self.height_sel_frame, from_=self.min_w_h, to=self.max_w_h, increment=0.2, width=4,
                                        textvariable=self.height_value, command=self.height_changed_by_arrow)
         self.height_label.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
         self.height_selector.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
@@ -71,6 +71,8 @@ class AdjustSizesWin(Toplevel):
         # Placing buttons on the Toplevel window in the single column
         self.resize_switch_btn.pack(side=TOP, padx=self.pad, pady=self.pad)
         self.height_width_frame.pack(side=TOP, padx=self.pad, pady=self.pad)
+
+        self.master.after(8500, self.master.relaunch_gui)  # testing relaunching of main window after some time
 
     # %% Methods
     def resize_switch(self):

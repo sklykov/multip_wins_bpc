@@ -9,7 +9,7 @@ Main GUI script.
 """
 
 # %% Global imports
-from tkinter import Frame, Menu, Tk
+from tkinter import Frame, Menu, Tk, font
 import platform
 import ctypes
 from pathlib import Path
@@ -39,7 +39,11 @@ class MainCtrlUI(Frame):
         # Below - put the main window on the (+x, +y) coordinate away from the top left of the screen
         self.master.geometry(f"+{self.screen_width//4}+{self.screen_height//5}")
 
-        # Default values of variables
+        # Default values of GUI provided by tkinter (for adjusting on the separate window)
+        self.default_font = font.nametofont("TkDefaultFont"); self.default_entry_font = font.nametofont("TkTextFont")
+        self.default_menu_font = font.nametofont("TkMenuFont"); self.tooltip_font = font.nametofont("TkTooltipFont")
+
+        # Default values of variables used in the methods
         self.adjust_sizes_win = None; self.windows_resizable = True
         self.figure_size_w = 5.6; self.figure_size_h = 5.0  # default width and height, measured in inches
 
@@ -53,7 +57,7 @@ class MainCtrlUI(Frame):
         self.image_figure = pltFigure.Figure(figsize=(self.figure_size_w, self.figure_size_h))  # empty figure with default sizes (WxH)
         self.image_canvas = FigureCanvasTkAgg(self.image_figure, master=self); self.plot_widget = self.image_canvas.get_tk_widget()
 
-        # Put widgets, buttons on the Frame (window)
+        # Put widgets, buttons on the Frame (window) with on the grid layout
         self.padx = 8; self.pady = 8
         self.plot_widget.grid(row=1, rowspan=6, column=1, columnspan=6, padx=self.padx, pady=self.pady)
         self.grid(); self.master.update()  # for showing all placed widgets in the grid layout
@@ -90,6 +94,19 @@ class MainCtrlUI(Frame):
         self.image_canvas = FigureCanvasTkAgg(self.image_figure, master=self); self.plot_widget = self.image_canvas.get_tk_widget()
         self.plot_widget.grid(row=1, rowspan=6, column=1, columnspan=6, padx=self.padx, pady=self.pady); self.master.update()
 
+    def relaunch_gui(self):
+        """
+        Register destroying of GUI window and this class for further relaunching of both.
+
+        It is needed for applying changed tkinter settings (like font size).
+
+        Returns
+        -------
+        None.
+
+        """
+        self._relaunch = True; self.after(12, self.master.destroy)
+
 
 # %% Wrapper UI class
 class WrapperMainUI():
@@ -110,8 +127,9 @@ class WrapperMainUI():
 
         """
         self.mainUI = MainCtrlUI(self.tk_root); self.mainUI.mainloop()
-        if self.mainUI._relaunch:  # relaunch the main GUI window, if some showing settings changed
-            del self.mainUI; self.mainUI = None; self.launch()
+        while self.mainUI._relaunch:  # relaunch the main GUI window, if some showing settings changed
+            del self.mainUI; del self.tk_root; self.tk_root = Tk()  # reinitialize main GUI class
+            self.mainUI = MainCtrlUI(self.tk_root); self.mainUI.mainloop()  # initialize again GUI based on Frame()
 
     @staticmethod
     def fix_blurring():
