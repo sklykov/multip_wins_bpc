@@ -9,7 +9,7 @@ Window with adjustment controls for tuning master window sizes.
 """
 
 # %% Global imports
-from tkinter import Toplevel, BooleanVar, TOP, LEFT, DoubleVar, TclError
+from tkinter import Toplevel, BooleanVar, TOP, LEFT, DoubleVar, TclError, IntVar
 from tkinter.ttk import Checkbutton, Style, Spinbox, Frame, Label
 
 
@@ -62,6 +62,15 @@ class AdjustSizesWin(Toplevel):
         self.height_selector.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
         self.height_sel_frame.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
 
+        # Font sizes selectors
+        self.font_sizes_frame = Frame(master=self)
+        self.default_font_label = Label(master=self.font_sizes_frame, text="Default Font: ")
+        self.default_font_value = IntVar(); self.default_font_value.set(self.master.default_font.cget("size"))
+        self.default_font_size_sel = Spinbox(master=self.font_sizes_frame, from_=6, to=18, increment=1, width=3,
+                                             textvariable=self.default_font_value)
+        self.default_font_label.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
+        self.default_font_size_sel.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
+
         # Associate hit Enter (Return) button with the Spinbox inputs
         self.inputs = [self.width_selector, self.height_selector]  # add all Spinbox (input) buttons
         self.associated_values_inputs = [self.width_value, self.height_value]
@@ -71,8 +80,9 @@ class AdjustSizesWin(Toplevel):
         # Placing buttons on the Toplevel window in the single column
         self.resize_switch_btn.pack(side=TOP, padx=self.pad, pady=self.pad)
         self.height_width_frame.pack(side=TOP, padx=self.pad, pady=self.pad)
+        self.font_sizes_frame.pack(side=TOP, padx=self.pad, pady=self.pad)
 
-        self.master.after(8500, self.master.relaunch_gui)  # testing relaunching of main window after some time
+        self.master.after(10000, self.master.relaunch_gui)  # testing relaunching of main window after some time
 
     # %% Methods
     def resize_switch(self):

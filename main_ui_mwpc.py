@@ -57,7 +57,7 @@ class MainCtrlUI(Frame):
         self.image_figure = pltFigure.Figure(figsize=(self.figure_size_w, self.figure_size_h))  # empty figure with default sizes (WxH)
         self.image_canvas = FigureCanvasTkAgg(self.image_figure, master=self); self.plot_widget = self.image_canvas.get_tk_widget()
 
-        # Put widgets, buttons on the Frame (window) with on the grid layout
+        # Put widgets, buttons on the Frame (window) on the grid layout
         self.padx = 8; self.pady = 8
         self.plot_widget.grid(row=1, rowspan=6, column=1, columnspan=6, padx=self.padx, pady=self.pady)
         self.grid(); self.master.update()  # for showing all placed widgets in the grid layout
