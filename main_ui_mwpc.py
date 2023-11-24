@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Main GUI script.
+Main GUI script - visualization of images stream.
 
 @author: sklykov
 

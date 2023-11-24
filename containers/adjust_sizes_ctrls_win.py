@@ -9,8 +9,15 @@ Window with adjustment controls for tuning master window sizes.
 """
 
 # %% Global imports
-from tkinter import Toplevel, BooleanVar, TOP, LEFT, DoubleVar, TclError, IntVar
+from tkinter import Toplevel, BooleanVar, TOP, LEFT, DoubleVar, IntVar
 from tkinter.ttk import Checkbutton, Style, Spinbox, Frame, Label
+from pathlib import Path
+
+# %% Local imports
+if __name__ == "__main__" or __name__ == Path(__file__).stem or __name__ == "__mp_main__":
+    from spinbox_wrapper import SpinboxWrapper
+else:
+    from .spinbox_wrapper import SpinboxWrapper
 
 
 # %% Window specification
@@ -49,6 +56,7 @@ class AdjustSizesWin(Toplevel):
         self.width_value = DoubleVar(); self.width_value.set(self.master.figure_size_w)
         self.width_selector = Spinbox(master=self.width_sel_frame, from_=self.min_w_h, to=self.max_w_h, increment=0.2, width=4,
                                       textvariable=self.width_value, command=self.width_changed_by_arrow)
+        self.width_selector_wr = SpinboxWrapper(self.width_selector, self.width_value, self.min_w_h, self.max_w_h, n_digit_points=1)
         self.width_label.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
         self.width_selector.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
         self.width_sel_frame.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
@@ -58,6 +66,7 @@ class AdjustSizesWin(Toplevel):
         self.height_value = DoubleVar(); self.height_value.set(self.master.figure_size_h)
         self.height_selector = Spinbox(master=self.height_sel_frame, from_=self.min_w_h, to=self.max_w_h, increment=0.2, width=4,
                                        textvariable=self.height_value, command=self.height_changed_by_arrow)
+        self.height_selector_wr = SpinboxWrapper(self.height_selector, self.height_value, self.min_w_h, self.max_w_h, n_digit_points=1)
         self.height_label.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
         self.height_selector.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
         self.height_sel_frame.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
@@ -66,23 +75,27 @@ class AdjustSizesWin(Toplevel):
         self.font_sizes_frame = Frame(master=self)
         self.default_font_label = Label(master=self.font_sizes_frame, text="Default Font: ")
         self.default_font_value = IntVar(); self.default_font_value.set(self.master.default_font.cget("size"))
-        self.default_font_size_sel = Spinbox(master=self.font_sizes_frame, from_=6, to=18, increment=1, width=3,
-                                             textvariable=self.default_font_value)
+        self.min_default_font = 6; self.max_default_font = 18
+        self.default_font_size_sel = Spinbox(master=self.font_sizes_frame, from_=self.min_default_font, to=self.max_default_font,
+                                             increment=1, width=3, textvariable=self.default_font_value)
+        self.default_font_size_sel_wr = SpinboxWrapper(self.default_font_size_sel, self.default_font_value, self.min_default_font, self.max_default_font)
         self.default_font_label.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
         self.default_font_size_sel.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
 
         # Associate hit Enter (Return) button with the Spinbox inputs
-        self.inputs = [self.width_selector, self.height_selector]  # add all Spinbox (input) buttons
-        self.associated_values_inputs = [self.width_value, self.height_value]
-        for spinbox_button in self.inputs:
-            spinbox_button.bind('<Return>', self.spinbox_input_enter)  # bind <Return> event for all Spinboxes
+        # Add all Spinbox (input) buttons and their wrappers into the list for addressing them
+        self.inputs = [(self.width_selector, self.width_selector_wr), (self.height_selector, self.height_selector_wr),
+                       (self.default_font_size_sel, self.default_font_size_sel_wr)]
+        for classes_tuple in self.inputs:
+            spinbox_button, _ = classes_tuple; spinbox_button.bind('<Return>', self.spinbox_input_enter)  # bind <Return> event for all Spinboxes
+            spinbox_button.bind('<FocusOut>', self.spinbox_input_enter)  # bind <FocusOut> event for all Spinboxes
 
         # Placing buttons on the Toplevel window in the single column
         self.resize_switch_btn.pack(side=TOP, padx=self.pad, pady=self.pad)
         self.height_width_frame.pack(side=TOP, padx=self.pad, pady=self.pad)
         self.font_sizes_frame.pack(side=TOP, padx=self.pad, pady=self.pad)
 
-        self.master.after(10000, self.master.relaunch_gui)  # testing relaunching of main window after some time
+        # self.master.after(10000, self.master.relaunch_gui)  # testing relaunching of main window after some time
 
     # %% Methods
     def resize_switch(self):
@@ -148,34 +161,21 @@ class AdjustSizesWin(Toplevel):
 
     def validate_inputs(self):
         """
-        Check all input (Spinbox) buttons for validity of the entered value.
+        Check all input (Spinbox) buttons for validity of the entered value and make associated method calls.
 
         Returns
         -------
         None.
 
         """
-        for i, spinbox_button in enumerate(self.inputs):
-            try:
-                value = self.associated_values_inputs[i].get()
-                if i < 2:
-                    value = float(value)  # force representation of input values to correspond initial representation
-                    if value < self.min_w_h or value > self.max_w_h:
-                        # Entered value is out of range, just set valid stored previous value
-                        if i == 0:
-                            self.associated_values_inputs[i].set(self.master.figure_size_w)
-                        elif i == 1:
-                            self.associated_values_inputs[i].set(self.master.figure_size_h)
-                    else:
-                        self.focus_set(); self.associated_values_inputs[i].set(value)
-                        # explicit call to the handling methods
-                        if i == 0:
-                            self.after(9, self.width_changed_by_arrow)
-                        elif i == 1:
-                            self.after(9, self.height_changed_by_arrow)
-            except TclError:
-                # Entered value not valid number, just set valid stored previous value
-                if i == 0:
-                    self.associated_values_inputs[i].set(self.master.figure_size_w)
-                elif i == 1:
-                    self.associated_values_inputs[i].set(self.master.figure_size_h)
+        for i, classes_tuple in enumerate(self.inputs):
+            _, wrapper_button = classes_tuple
+            if i == 0:
+                if wrapper_button.validate_input():
+                    self.after(12, self.width_changed_by_arrow)
+            elif i == 1:
+                if wrapper_button.validate_input():
+                    self.after(12, self.height_changed_by_arrow)
+            else:
+                wrapper_button.validate_input()
+        self.focus_set()
