@@ -72,20 +72,28 @@ class AdjustSizesWin(Toplevel):
         self.height_sel_frame.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
 
         # Font sizes selectors
-        self.font_sizes_frame = Frame(master=self)
-        self.default_font_label = Label(master=self.font_sizes_frame, text="Default Font: ")
-        self.default_font_value = IntVar(); self.default_font_value.set(self.master.default_font.cget("size"))
-        self.min_default_font = 6; self.max_default_font = 18
-        self.default_font_size_sel = Spinbox(master=self.font_sizes_frame, from_=self.min_default_font, to=self.max_default_font,
-                                             increment=1, width=3, textvariable=self.default_font_value)
-        self.default_font_size_sel_wr = SpinboxWrapper(self.default_font_size_sel, self.default_font_value, self.min_default_font, self.max_default_font)
-        self.default_font_label.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
-        self.default_font_size_sel.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
+        self.font_sizes_frame = Frame(master=self); self.whitespace_label = Label(master=self.font_sizes_frame, text=" ")
+        # Default font of texts in buttons and labels
+        self.text_font_label = Label(master=self.font_sizes_frame, text="Text Font: ")
+        self.text_font_value = IntVar(); self.text_font_value.set(self.master.default_font.cget("size"))
+        self.min_text_font = 6; self.max_text_font = 18
+        self.text_font_size_sel = Spinbox(master=self.font_sizes_frame, from_=self.min_text_font, to=self.max_text_font,
+                                          increment=1, width=3, textvariable=self.text_font_value, command=self.main_font_changed_by_arrow)
+        self.text_font_size_sel_wr = SpinboxWrapper(self.text_font_size_sel, self.text_font_value, self.min_text_font, self.max_text_font)
+        # Default font of entries
+        self.entry_font_label = Label(master=self.font_sizes_frame, text="Entry Font: ")
+        self.entry_font_value = IntVar(); self.entry_font_value.set(self.master.default_entry_font.cget("size"))
+        self.entry_font_size_sel = Spinbox(master=self.font_sizes_frame, from_=self.min_text_font, to=self.max_text_font,
+                                           increment=1, width=3, textvariable=self.entry_font_value, command=self.entry_font_changed_by_arrow)
+        self.entry_font_size_sel_wr = SpinboxWrapper(self.entry_font_size_sel, self.entry_font_value, self.min_text_font, self.max_text_font)
+        self.text_font_label.pack(side=LEFT, padx=0, pady=self.pad//2); self.text_font_size_sel.pack(side=LEFT, padx=0, pady=self.pad//2)
+        self.whitespace_label.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
+        self.entry_font_label.pack(side=LEFT, padx=0, pady=self.pad//2); self.entry_font_size_sel.pack(side=LEFT, padx=0, pady=self.pad//2)
 
         # Associate hit Enter (Return) button with the Spinbox inputs
         # Add all Spinbox (input) buttons and their wrappers into the list for addressing them
         self.inputs = [(self.width_selector, self.width_selector_wr), (self.height_selector, self.height_selector_wr),
-                       (self.default_font_size_sel, self.default_font_size_sel_wr)]
+                       (self.text_font_size_sel, self.text_font_size_sel_wr)]
         for classes_tuple in self.inputs:
             spinbox_button, _ = classes_tuple; spinbox_button.bind('<Return>', self.spinbox_input_enter)  # bind <Return> event for all Spinboxes
             spinbox_button.bind('<FocusOut>', self.spinbox_input_enter)  # bind <FocusOut> event for all Spinboxes
@@ -116,6 +124,7 @@ class AdjustSizesWin(Toplevel):
         self.master.master.resizable(self.resize_state.get(), self.resize_state.get())  # regulate resizing of the master window
         self.resizable(self.resize_state.get(), self.resize_state.get()); self.master.windows_resizable = self.resize_state.get()
 
+    # %% Actions connected with Spinboxes
     def width_changed_by_arrow(self):
         """
         Width of a figure value changed by arrows on UI.
@@ -127,8 +136,7 @@ class AdjustSizesWin(Toplevel):
         """
         self.master.figure_size_w = self.width_value.get()
         self.master.reinitialize_image_figure()  # Reinitialize the figure with updated sizes
-        x_shift = self.master.master.winfo_x() + self.master.master.winfo_width() + 10  # shift of Toplevel window horizontally
-        self.geometry(f"+{x_shift}+{self.initial_y_shift}")  # shift this window next to the master one
+        self.shift_horizontally()
 
     def height_changed_by_arrow(self):
         """
@@ -141,6 +149,21 @@ class AdjustSizesWin(Toplevel):
         """
         self.master.figure_size_h = self.height_value.get()
         self.master.reinitialize_image_figure()  # Reinitialize the figure with updated sizes
+
+    def main_font_changed_by_arrow(self):
+        """
+        Call by the default font Spinbox.
+
+        Returns
+        -------
+        None.
+
+        """
+        self.master.default_font.config(size=self.text_font_value.get()); self.master.update()
+        self.shift_horizontally()
+
+    def entry_font_changed_by_arrow(self):
+        pass
 
     def spinbox_input_enter(self, *args):
         """
@@ -170,12 +193,28 @@ class AdjustSizesWin(Toplevel):
         """
         for i, classes_tuple in enumerate(self.inputs):
             _, wrapper_button = classes_tuple
+            # Individual assigning of methods for different Spinboxes
             if i == 0:
                 if wrapper_button.validate_input():
                     self.after(12, self.width_changed_by_arrow)
             elif i == 1:
                 if wrapper_button.validate_input():
                     self.after(12, self.height_changed_by_arrow)
+            elif i == 2:
+                if wrapper_button.validate_input():
+                    self.after(12, self.main_font_changed_by_arrow)
             else:
                 wrapper_button.validate_input()
         self.focus_set()
+
+    def shift_horizontally(self):
+        """
+        Shift this window because of some master GUI properties changed.
+
+        Returns
+        -------
+        None.
+
+        """
+        x_shift = self.master.master.winfo_x() + self.master.master.winfo_width() + 10  # shift of Toplevel window horizontally
+        self.geometry(f"+{x_shift}+{self.initial_y_shift}")  # shift this window next to the master one

@@ -10,6 +10,7 @@ Main GUI script - visualization of images stream.
 
 # %% Global imports
 from tkinter import Frame, Menu, Tk, font
+from tkinter.ttk import Button, Style
 import platform
 import ctypes
 from pathlib import Path
@@ -57,11 +58,30 @@ class MainCtrlUI(Frame):
         self.image_figure = pltFigure.Figure(figsize=(self.figure_size_w, self.figure_size_h))  # empty figure with default sizes (WxH)
         self.image_canvas = FigureCanvasTkAgg(self.image_figure, master=self); self.plot_widget = self.image_canvas.get_tk_widget()
 
+        # Buttons
+        self.single_click_btn_style = Style(); self.single_click_btn_style_name = 'Custom1.TButton'
+        self.single_click_btn_style.configure(self.single_click_btn_style_name, foreground='blue')  # Make specific styling of ttk.Button
+        self.snap_image_btn = Button(master=self, text="Snap Image", command=self.snap_image, style=self.single_click_btn_style_name)
+
         # Put widgets, buttons on the Frame (window) on the grid layout
-        self.padx = 8; self.pady = 8
-        self.plot_widget.grid(row=1, rowspan=6, column=1, columnspan=6, padx=self.padx, pady=self.pady)
+        self.padx = 6; self.pady = 6
+        self.plot_widget.grid(row=0, rowspan=18, column=0, columnspan=10, padx=self.padx, pady=self.pady)
+        self.snap_image_btn.grid(row=0, rowspan=1, column=10, columnspan=1, padx=self.padx, pady=self.pady)
         self.grid(); self.master.update()  # for showing all placed widgets in the grid layout
 
+    # %% Functionality
+    def snap_image(self):
+        """
+        Acquire single image from the camera.
+
+        Returns
+        -------
+        None.
+
+        """
+        pass
+
+    # %% Adjusting GUI
     def adjust_sizes(self):
         """
         Open additional window for adjusting sizes of this main window.
@@ -92,7 +112,7 @@ class MainCtrlUI(Frame):
         self.plot_widget.destroy(); self.image_canvas = None; self.image_figure = None   # delete widget and variables by deleting references
         self.image_figure = pltFigure.Figure(figsize=(self.figure_size_w, self.figure_size_h))  # empty figure with default sizes (WxH)
         self.image_canvas = FigureCanvasTkAgg(self.image_figure, master=self); self.plot_widget = self.image_canvas.get_tk_widget()
-        self.plot_widget.grid(row=1, rowspan=6, column=1, columnspan=6, padx=self.padx, pady=self.pady); self.master.update()
+        self.plot_widget.grid(row=0, rowspan=18, column=0, columnspan=10, padx=self.padx, pady=self.pady); self.master.update()
 
     def relaunch_gui(self):
         """
