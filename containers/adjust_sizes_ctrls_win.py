@@ -13,7 +13,6 @@ from tkinter import Toplevel, BooleanVar, TOP, LEFT, DoubleVar, IntVar, Scale
 from tkinter.ttk import Checkbutton, Style, Spinbox, Frame, Label, Button
 from pathlib import Path
 import platform
-import time
 
 # %% Local imports
 if __name__ == "__main__" or __name__ == Path(__file__).stem or __name__ == "__mp_main__":
@@ -110,11 +109,11 @@ class AdjustSizesWin(Toplevel):
         self.menu_font_label.pack(side=LEFT, padx=0, pady=self.pad//2); self.menu_font_size_sel.pack(side=LEFT, padx=0, pady=self.pad//2)
 
         # Slider for changing the scaling factor
-        self.scaling_frame = Frame(master=self); self.scaling_label = Label(master=self.scaling_frame, text="DPI: ")
-        self.scaling_slider = Scale(master=self.scaling_frame, resolution=2, from_=int(round(0.75*self.current_dpi, 0)),
-                                    to=int(round(1.5*self.current_dpi, 0)), length=200, orient='horizontal', tickinterval=20)
-        self.scaling_slider.set(self.current_dpi)
-        self.apply_scale_btn = Button(master=self.scaling_frame, command=self.apply_new_scaling, text="Apply DPI",
+        self.scaling_frame = Frame(master=self); self.scaling_label = Label(master=self.scaling_frame, text="Scaling: ")
+        self.scaling_slider = Scale(master=self.scaling_frame, resolution=0.1, from_=round(0.75*(self.current_dpi/100), 1),
+                                    to=round(1.5*(self.current_dpi/100), 1), length=200, orient='horizontal', tickinterval=0.1)
+        self.scaling_slider.set(self.current_dpi/100)
+        self.apply_scale_btn = Button(master=self.scaling_frame, command=self.apply_new_scaling, text="Apply Scaling",
                                       style=self.master.single_click_btn_style_name)
         self.scaling_label.pack(side=LEFT, padx=0, pady=self.pad//2); self.scaling_slider.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
         self.apply_scale_btn.pack(side=LEFT, padx=0, pady=self.pad//2)
@@ -162,8 +161,8 @@ class AdjustSizesWin(Toplevel):
         None.
 
         """
-        if self.current_dpi != self.scaling_slider.get():
-            self.master.tk.call('tk', 'scaling', self.scaling_slider.get()/self.current_dpi)
+        if self.current_dpi != int(100*self.scaling_slider.get()):
+            self.master.tk.call('tk', 'scaling', int(100*self.scaling_slider.get())/self.current_dpi)
             if not self.master._changed_dpi:
                 print("The original scaling will be changed, for returning to the original one, relaunch Python ")
             self.master._changed_dpi = True
@@ -206,8 +205,8 @@ class AdjustSizesWin(Toplevel):
         None.
 
         """
-        self.master.main_font.config(size=self.text_font_value.get()); self.update()
-        self.master.update(); self.shift_horizontally(); self.focus_force()
+        self.master.main_font_size = self.text_font_value.get(); self.master.after(18, self.master.adjust_fonts)
+        self.after(32, self.shift_horizontally); self.focus_force()
 
     def entry_font_changed_by_arrow(self):
         """
@@ -218,8 +217,8 @@ class AdjustSizesWin(Toplevel):
         None.
 
         """
-        self.master.entry_font.config(size=self.entry_font_value.get()); self.update()
-        self.master.update(); self.shift_horizontally(); self.focus_force()
+        self.master.entry_font_size = self.entry_font_value.get(); self.master.after(18, self.master.adjust_fonts)
+        self.after(32, self.shift_horizontally); self.focus_force()
 
     def menu_font_changed_by_arrow(self):
         """
@@ -230,8 +229,8 @@ class AdjustSizesWin(Toplevel):
         None.
 
         """
-        self.master.menu_font.config(size=self.menu_font_value.get()); self.update()
-        self.master.update(); self.shift_horizontally(); self.focus_force()
+        self.master.menu_font_size = self.menu_font_value.get(); self.master.after(18, self.master.adjust_fonts)
+        self.after(32, self.shift_horizontally); self.focus_force()
 
     def spinbox_input_enter(self, *args):
         """

@@ -13,10 +13,13 @@ Main GUI script - visualization of images stream.
 # The issue: if the main window has not been closed before using adjusting the window sizes, cannot be relaunched in the IPython console (need refresh)
 
 # %% Global imports
-import tkthread; tkthread.patch()  # fix the errors reported after closing the GUI: "RuntimeError: main thread is not in main loop"
+try:
+    import tkthread; tkthread.patch()  # fix the errors reported after closing the GUI: "RuntimeError: main thread is not in main loop"
+except ModuleNotFoundError:
+    print("Please install 'tkthread' from https://pypi.org/project/tkthread/ for making tkinter thread-safe")
 # Ref. to the package above: https://pypi.org/project/tkthread/  Note that the license is Apache Software License.
-from tkinter import Frame, Menu, Tk, font
-from tkinter.ttk import Button, Style
+from tkinter import Frame, Menu, Tk, font, LEFT, StringVar
+from tkinter.ttk import Button, Style, Label, OptionMenu
 import platform
 import ctypes
 from pathlib import Path
@@ -50,18 +53,22 @@ class MainCtrlUI(Frame):
         self.master.geometry(f"+{self.screen_width//4}+{self.screen_height//5}")
         self._changed_dpi = changed_dpp  # for disabling width / height controlling of an image
         # self.master.protocol("WM_DELETE_WINDOW", self.close)
-        self.focus_force()
+        self.focus_force(); self.padx = 6; self.pady = 6
 
         # Default values of GUI provided by tkinter (for adjusting on the separate window)
         self.main_font = font.nametofont("TkDefaultFont"); self.entry_font = font.nametofont("TkTextFont"); self.menu_font = font.nametofont("TkMenuFont")
-        if self.main_font.cget("size") <= 9:
+        self.main_font_size = self.main_font.cget("size"); self.entry_font_size = self.entry_font.cget("size")
+        self.menu_font_size = self.menu_font.cget("size")
+        if self.main_font_size <= 9:
             self.main_font.config(size=self.main_font.cget("size") + 1)  # increase by 1 default font size
-        if self.entry_font.cget("size") <= 9:
+            self.main_font_size += 1
+        if self.entry_font_size <= 9:
             self.entry_font.config(size=self.entry_font.cget("size") + 1)  # increase by 1 default font size
+            self.entry_font_size += 1
 
         # Default values of variables used in the methods
         self.adjust_sizes_win = None; self.windows_resizable = True
-        self.figure_size_w = 5.6; self.figure_size_h = 5.2  # default width and height, measured in inches
+        self.figure_size_w = 6.2; self.figure_size_h = 5.8  # default width and height, measured in inches
 
         # Adding menu bar to the master window (root window)
         self.menubar = Menu(self.master); self.master.config(menu=self.menubar)
@@ -74,18 +81,30 @@ class MainCtrlUI(Frame):
         self.image_figure = pltFigure.Figure(figsize=(self.figure_size_w, self.figure_size_h))  # empty figure with default sizes (WxH)
         self.image_canvas = FigureCanvasTkAgg(self.image_figure, master=self); self.plot_widget = self.image_canvas.get_tk_widget()
 
+        # Select the camera from the list
+        self.camera_selector_frame = Frame(master=self); self.camera_label_style = Style(); self.camera_label_style_name = 'Custom1.TLabel'
+        self.camera_label_style.configure(self.camera_label_style_name, foreground='black')
+        self.camera_selector_label = Label(master=self.camera_selector_frame, text="Camera: ", style=self.camera_label_style_name)
+        self.supported_cameras = ["Simulated", "Physical"]  # list of the names with the supported cameras
+        self.selected_camera = StringVar(); self.selected_camera.set(self.supported_cameras[0])
+        self.camera_sel_style = Style(); self.camera_sel_style_name = 'Custom1.TMenubutton'
+        self.camera_sel_style.configure(self.camera_sel_style_name, foreground='#f59402', background='#403f3d')  # dark grey bg, orange fg
+        self.camera_selector = OptionMenu(self.camera_selector_frame, self.selected_camera, self.supported_cameras[0], *self.supported_cameras,
+                                          style=self.camera_sel_style_name, command=self.change_active_camera)
+        self.camera_selector_label.pack(side=LEFT, padx=0, pady=0); self.camera_selector.pack(side=LEFT, padx=0, pady=0)
+
         # Buttons
         self.single_click_btn_style = Style(); self.single_click_btn_style_name = 'Custom1.TButton'
         self.single_click_btn_style.configure(self.single_click_btn_style_name, foreground='blue')  # Make specific styling of ttk.Button
         self.snap_image_btn = Button(master=self, text="Snap Image", command=self.snap_image, style=self.single_click_btn_style_name)
 
         # Put widgets, buttons on the Frame (window) on the grid layout
-        self.padx = 6; self.pady = 6
-        self.plot_widget.grid(row=0, rowspan=18, column=0, columnspan=10, padx=self.padx, pady=self.pady)
-        self.snap_image_btn.grid(row=0, rowspan=1, column=10, columnspan=1, padx=self.padx, pady=self.pady)
+        self.plot_widget.grid(row=0, rowspan=14, column=0, columnspan=8, padx=self.padx, pady=self.pady)  # The biggest GUI element - image widget
+        self.camera_selector_frame.grid(row=0, rowspan=1, column=8, columnspan=1, padx=self.padx, pady=self.pady//2)
+        self.snap_image_btn.grid(row=1, rowspan=1, column=8, columnspan=1, padx=self.padx, pady=self.pady//2)
         self.grid(); self.master.update()  # for showing all placed widgets in the grid layout
 
-    # %% Functionality
+    # %% Acquisition
     def snap_image(self):
         """
         Acquire single image from the camera.
@@ -96,6 +115,23 @@ class MainCtrlUI(Frame):
 
         """
         pass
+
+    # %% Change the camera
+    def change_active_camera(self, selected_camera):
+        """
+        Change the active camera.
+
+        Parameters
+        ----------
+        selected_camera : str
+            Provided by tkinter call.
+
+        Returns
+        -------
+        None.
+
+        """
+        print("Selected camera:", selected_camera)
 
     # %% Adjusting GUI
     def adjust_sizes(self):
@@ -130,6 +166,18 @@ class MainCtrlUI(Frame):
         self.image_canvas = FigureCanvasTkAgg(self.image_figure, master=self); self.plot_widget = self.image_canvas.get_tk_widget()
         self.plot_widget.grid(row=0, rowspan=18, column=0, columnspan=10, padx=self.padx, pady=self.pady); self.master.update()
         self.image_figure.set_figwidth(self.figure_size_w); self.image_figure.set_figheight(self.figure_size_h)
+
+    def adjust_fonts(self):
+        """
+        Adjust fonts by using changed font sizes on the additional window.
+
+        Returns
+        -------
+        None.
+
+        """
+        self.main_font.config(size=self.main_font_size); self.entry_font.config(size=self.entry_font_size)
+        self.menu_font.config(size=self.menu_font_size); self.update()
 
     def relaunch_gui(self):
         """
