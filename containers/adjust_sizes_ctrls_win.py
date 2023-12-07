@@ -13,6 +13,7 @@ from tkinter import Toplevel, BooleanVar, TOP, LEFT, DoubleVar, IntVar, Scale
 from tkinter.ttk import Checkbutton, Style, Spinbox, Frame, Label, Button
 from pathlib import Path
 import platform
+import time
 
 # %% Local imports
 if __name__ == "__main__" or __name__ == Path(__file__).stem or __name__ == "__mp_main__":
@@ -166,7 +167,7 @@ class AdjustSizesWin(Toplevel):
             if not self.master._changed_dpi:
                 print("The original scaling will be changed, for returning to the original one, relaunch Python ")
             self.master._changed_dpi = True
-            self.master.after(125, self.master.relaunch_gui)  # relaunching of main window with the new scale applied
+            self.master.after(30, self.master.relaunch_gui)  # register the relaunching of the main GUI
 
     # %% Actions connected with Spinboxes
     def width_changed_by_arrow(self):
@@ -179,8 +180,9 @@ class AdjustSizesWin(Toplevel):
 
         """
         self.master.figure_size_w = self.width_value.get()
-        self.master.reinitialize_image_figure()  # Reinitialize the figure with updated sizes
-        self.shift_horizontally(); self.master.update()
+        # With the combination of tkthread seems that it solves the issue with "main thread is not in main loop" (seems)
+        self.master.after(20, self.master.reinitialize_image_figure)
+        self.after(35, self.shift_horizontally)
 
     def height_changed_by_arrow(self):
         """
@@ -192,8 +194,8 @@ class AdjustSizesWin(Toplevel):
 
         """
         self.master.figure_size_h = self.height_value.get()
-        self.master.reinitialize_image_figure()  # Reinitialize the figure with updated sizes
-        self.master.update()
+        # With the combination of tkthread seems that it solves the issue with "main thread is not in main loop" (seems)
+        self.master.after(20, self.master.reinitialize_image_figure)
 
     def main_font_changed_by_arrow(self):
         """
