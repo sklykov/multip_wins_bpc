@@ -10,7 +10,8 @@ Main GUI script - visualization of images stream.
 
 # %% Dev comments
 # Overall note: tkinter isn't good for complex GUI development, planning to switch to another GUI library
-# The issue: if the main window has not been closed before using adjusting the window sizes, cannot be relaunched in the IPython console (need refresh)
+# The issue: if the main window has not been closed before using adjusting the window sizes, cannot be relaunched in the IPython console.
+# It needs to be relaunched
 
 # %% Global imports
 try:
@@ -18,8 +19,9 @@ try:
 except ModuleNotFoundError:
     print("Please install 'tkthread' from https://pypi.org/project/tkthread/ for making tkinter thread-safe")
 # Ref. to the package above: https://pypi.org/project/tkthread/  Note that the license is Apache Software License.
-from tkinter import Frame, Menu, Tk, font, LEFT, StringVar
+from tkinter import Frame, Menu, Tk, font, LEFT, TOP, BOTH, StringVar
 from tkinter.ttk import Button, Style, Label, OptionMenu
+from tkinter.ttk import Frame as ttkFrame
 import platform
 import ctypes
 from pathlib import Path
@@ -28,15 +30,20 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg  # import canvas
 import matplotlib.figure as pltFigure   # matplotlib figure for showing images
 import time
 import inspect
+from datetime import datetime  # for getting current year
+from multiprocessing import Queue, Event
 
 # %% Local imports
 if __name__ == "__main__" or __name__ == Path(__file__).stem or __name__ == "__mp_main__":
     from containers.adjust_sizes_ctrls_win import AdjustSizesWin
+    from utils.utility_funcs import clean_mp_queue
 else:
     from .containers.adjust_sizes_ctrls_win import AdjustSizesWin
+    from .utils.utility_funcs import clean_mp_queue
 
 # %% Script-wide parameters
-__start_message__ = "Main controlling GUI boiler-plate class, MIT licensed, 2023"
+current_year = datetime.now().strftime('%Y')
+__start_message__ = f"Main Controlling Camera GUI script, {current_year} MIT licensed, GitHub: @sklykov"
 
 
 # %% GUI based on tkinter.Frame
@@ -53,12 +60,12 @@ class MainCtrlUI(Frame):
         self.master.geometry(f"+{self.screen_width//4}+{self.screen_height//5}")
         self._changed_dpi = changed_dpp  # for disabling width / height controlling of an image
         # self.master.protocol("WM_DELETE_WINDOW", self.close)
-        self.focus_force(); self.padx = 6; self.pady = 6
+        self.focus_force(); self.padx = 8; self.pady = 8
 
         # Default values of GUI provided by tkinter (for adjusting on the separate window)
-        self.main_font = font.nametofont("TkDefaultFont"); self.entry_font = font.nametofont("TkTextFont"); self.menu_font = font.nametofont("TkMenuFont")
+        self.main_font = font.nametofont("TkDefaultFont"); self.entry_font = font.nametofont("TkTextFont")
+        self.menu_font = font.nametofont("TkMenuFont"); self.menu_font_size = self.menu_font.cget("size")
         self.main_font_size = self.main_font.cget("size"); self.entry_font_size = self.entry_font.cget("size")
-        self.menu_font_size = self.menu_font.cget("size")
         if self.main_font_size <= 9:
             self.main_font.config(size=self.main_font.cget("size") + 1)  # increase by 1 default font size
             self.main_font_size += 1
@@ -82,27 +89,47 @@ class MainCtrlUI(Frame):
         self.image_canvas = FigureCanvasTkAgg(self.image_figure, master=self); self.plot_widget = self.image_canvas.get_tk_widget()
 
         # Select the camera from the list
-        self.camera_selector_frame = Frame(master=self); self.camera_label_style = Style(); self.camera_label_style_name = 'Custom1.TLabel'
-        self.camera_label_style.configure(self.camera_label_style_name, foreground='black')
+        self.buttons_frame = Frame(master=self)  # for placing all buttons in it
+        self.bg_color = '#52514f'  # some custom dark background color for label and selectable type of the camera
+        self.widgets_styles = Style()   # the single class is enough for configuration of different widget names
+        self.camera_sel_frame_style_n = 'Custom1.TFrame'; self.widgets_styles.configure(self.camera_sel_frame_style_n, background=self.bg_color)
+        self.camera_selector_frame = ttkFrame(master=self.buttons_frame, style=self.camera_sel_frame_style_n)
+        self.camera_label_style_name = 'Custom1.TLabel'; self.widgets_styles.configure(self.camera_label_style_name,
+                                                                                       foreground='white', background=self.bg_color)
         self.camera_selector_label = Label(master=self.camera_selector_frame, text="Camera: ", style=self.camera_label_style_name)
         self.supported_cameras = ["Simulated", "Physical"]  # list of the names with the supported cameras
         self.selected_camera = StringVar(); self.selected_camera.set(self.supported_cameras[0])
-        self.camera_sel_style = Style(); self.camera_sel_style_name = 'Custom1.TMenubutton'
-        self.camera_sel_style.configure(self.camera_sel_style_name, foreground='#f59402', background='#403f3d')  # dark grey bg, orange fg
+        self.camera_sel_style_name = 'Custom1.TMenubutton'
+        self.widgets_styles.configure(self.camera_sel_style_name, foreground='#FFCD1B', background=self.bg_color)  # dark grey bg, orange fg
         self.camera_selector = OptionMenu(self.camera_selector_frame, self.selected_camera, self.supported_cameras[0], *self.supported_cameras,
                                           style=self.camera_sel_style_name, command=self.change_active_camera)
         self.camera_selector_label.pack(side=LEFT, padx=0, pady=0); self.camera_selector.pack(side=LEFT, padx=0, pady=0)
 
-        # Buttons
-        self.single_click_btn_style = Style(); self.single_click_btn_style_name = 'Custom1.TButton'
-        self.single_click_btn_style.configure(self.single_click_btn_style_name, foreground='blue')  # Make specific styling of ttk.Button
-        self.snap_image_btn = Button(master=self, text="Snap Image", command=self.snap_image, style=self.single_click_btn_style_name)
+        # Camera status label - for showing the initialization status of the selected camera
+        self.camera_init_status_style = 'Initialized.TLabel'; self.camera_error_status_style = 'Error.TLabel'
+        self.widgets_styles.configure(self.camera_init_status_style, foreground='green')
+        self.widgets_styles.configure(self.camera_error_status_style, foreground='red')
+        self.camera_inact_text = "Camera Inactive"; self.camera_act_text = "Camera Active"
+        self.camera_status_label = Label(master=self.buttons_frame, text=self.camera_inact_text, style=self.camera_error_status_style)
 
-        # Put widgets, buttons on the Frame (window) on the grid layout
-        self.plot_widget.grid(row=0, rowspan=14, column=0, columnspan=8, padx=self.padx, pady=self.pady)  # The biggest GUI element - image widget
-        self.camera_selector_frame.grid(row=0, rowspan=1, column=8, columnspan=1, padx=self.padx, pady=self.pady//2)
-        self.snap_image_btn.grid(row=1, rowspan=1, column=8, columnspan=1, padx=self.padx, pady=self.pady//2)
-        self.grid(); self.master.update()  # for showing all placed widgets in the grid layout
+        # Buttons
+        self.single_click_btn_style_name = 'Snap.TButton'; self.widgets_styles.configure(self.single_click_btn_style_name, foreground='blue')
+        self.snap_image_btn = Button(master=self.buttons_frame, text="Snap Image", command=self.snap_image,
+                                     style=self.single_click_btn_style_name)
+
+        # Placing GUI elements in the container (Frame) which in turn is placed below along with the plot_widget
+        self.camera_selector_frame.pack(side=TOP, padx=self.padx, pady=self.pady//2)
+        self.camera_status_label.pack(side=TOP, padx=self.padx, pady=self.pady)
+        self.snap_image_btn.pack(side=TOP, padx=self.padx, pady=self.pady*2)
+
+        # Pack plot widget with the image and Frame with buttons (grid layout removed)
+        self.plot_widget.pack(side=LEFT, padx=self.padx, pady=self.pady)  # The biggest GUI element - image widget
+        self.buttons_frame.pack(side=TOP, padx=self.padx, pady=self.pady)  # place container for buttons stick to the top
+        self.pack(fill=BOTH); self.update()  # commands for finally show all packed widgets
+
+        # Initialize communication queues and triggers
+        self.commands2camera = Queue(maxsize=5); self.dataFromCamera = Queue(maxsize=10)
+        self.triggerCommands = Event(); self.triggerCameraData = Event()
 
     # %% Acquisition
     def snap_image(self):
@@ -116,7 +143,7 @@ class MainCtrlUI(Frame):
         """
         pass
 
-    # %% Change the camera
+    # %% Camera control
     def change_active_camera(self, selected_camera):
         """
         Change the active camera.
@@ -132,6 +159,30 @@ class MainCtrlUI(Frame):
 
         """
         print("Selected camera:", selected_camera)
+        if not self.check_installed_drivers(selected_camera):
+            print(f"The required drivers for the '{selected_camera}' camera not installed")
+        else:
+            pass  # initialize the Camera Wrapper class for placing the ctrl logic in the dedicated process
+
+    def check_installed_drivers(self, selected_camera) -> bool:
+        """
+        Check if the required drivers installed in the current environment.
+
+        Parameters
+        ----------
+        selected_camera : str
+            Provided by the calling method (change_active_camera).
+
+        Returns
+        -------
+        bool
+            Flag if the required drivers not installed in the current environment.
+
+        """
+        if selected_camera == "Simulated":
+            return True  # default assuming that simulated camera is always available as the fallback
+        elif selected_camera == self.supported_cameras[1]:
+            return False  # TODO: check 'fluoscenepy' import
 
     # %% Adjusting GUI
     def adjust_sizes(self):
@@ -161,10 +212,10 @@ class MainCtrlUI(Frame):
         None.
 
         """
-        self.plot_widget.destroy()
+        self.plot_widget.destroy(); self.buttons_frame.pack_forget()
         self.image_figure = pltFigure.Figure(figsize=(self.figure_size_w, self.figure_size_h))  # empty figure with changed
         self.image_canvas = FigureCanvasTkAgg(self.image_figure, master=self); self.plot_widget = self.image_canvas.get_tk_widget()
-        self.plot_widget.grid(row=0, rowspan=18, column=0, columnspan=10, padx=self.padx, pady=self.pady); self.master.update()
+        self.plot_widget.pack(side=LEFT, padx=self.padx, pady=self.pady); self.buttons_frame.pack(side=TOP, padx=self.padx, pady=self.pady)
         self.image_figure.set_figwidth(self.figure_size_w); self.image_figure.set_figheight(self.figure_size_h)
 
     def adjust_fonts(self):
@@ -189,6 +240,19 @@ class MainCtrlUI(Frame):
 
         """
         self._relaunch = True; self.after(40, self.master.destroy)
+
+    # %% Close Main Win.
+    def destroy(self):
+        """
+        Rewrite the behaviour of the main window then it's closed.
+
+        Returns
+        -------
+        None.
+
+        """
+        self.dataFromCamera = clean_mp_queue(self.dataFromCamera); self.dataFromCamera.close()  # cleaning the queue
+        self.commands2camera = clean_mp_queue(self.dataFromCamera); self.commands2camera.close()
 
 
 # %% Wrapper UI class

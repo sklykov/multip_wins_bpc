@@ -63,7 +63,8 @@ class AdjustSizesWin(Toplevel):
         self.width_selector = Spinbox(master=self.width_sel_frame, from_=self.min_w_h, to=self.max_w_h, increment=0.2, width=4,
                                       textvariable=self.width_value, command=self.width_changed_by_arrow)
         self.width_selector_wr = SpinboxWrapper(self.width_selector, self.width_value, self.min_w_h, self.max_w_h, n_digit_points=1)
-        self.width_label.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2); self.width_selector.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
+        self.width_label.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
+        self.width_selector.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
         self.width_sel_frame.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
         # Height selector specification as the Spinbox
         self.height_sel_frame = Frame(master=self.height_width_frame)
@@ -72,7 +73,8 @@ class AdjustSizesWin(Toplevel):
         self.height_selector = Spinbox(master=self.height_sel_frame, from_=self.min_w_h, to=self.max_w_h, increment=0.2, width=4,
                                        textvariable=self.height_value, command=self.height_changed_by_arrow)
         self.height_selector_wr = SpinboxWrapper(self.height_selector, self.height_value, self.min_w_h, self.max_w_h, n_digit_points=1)
-        self.height_label.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2); self.height_selector.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
+        self.height_label.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
+        self.height_selector.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
         self.height_sel_frame.pack(side=LEFT, padx=self.pad//2, pady=self.pad//2)
 
         # Disable width / height adjusting because of the some bug in arrow function call
