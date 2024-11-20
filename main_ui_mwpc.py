@@ -37,9 +37,11 @@ from multiprocessing import Queue, Event
 if __name__ == "__main__" or __name__ == Path(__file__).stem or __name__ == "__mp_main__":
     from containers.adjust_sizes_ctrls_win import AdjustSizesWin
     from utils.utility_funcs import clean_mp_queue
+    from camera.camera_wrapper import CameraWrapper
 else:
     from .containers.adjust_sizes_ctrls_win import AdjustSizesWin
     from .utils.utility_funcs import clean_mp_queue
+    from .camera.camera_wrapper import CameraWrapper
 
 # %% Script-wide parameters
 current_year = datetime.now().strftime('%Y')
@@ -50,7 +52,7 @@ __start_message__ = f"Main Controlling Camera GUI script, {current_year} MIT lic
 class MainCtrlUI(Frame):
     """GUI based on tkinter.Frame composing all main controls."""
 
-    def __init__(self, master, changed_dpp: bool = False):
+    def __init__(self, master, changed_dpi: bool = False):
         super().__init__(master)  # initialize the Frame - container for all controls below
         self._relaunch = False  # flag for relaunching again this frame with changed showing parameters
         self.focus_set()  # switch focus to the Frame, working if launched from Python console
@@ -58,8 +60,7 @@ class MainCtrlUI(Frame):
         self.screen_height = self.master.winfo_screenheight()
         # Below - put the main window on the (+x, +y) coordinate away from the top left of the screen
         self.master.geometry(f"+{self.screen_width//4}+{self.screen_height//5}")
-        self._changed_dpi = changed_dpp  # for disabling width / height controlling of an image
-        # self.master.protocol("WM_DELETE_WINDOW", self.close)
+        self._changed_dpi = changed_dpi  # for disabling width / height controlling of an image
         self.focus_force(); self.padx = 8; self.pady = 8
 
         # Default values of GUI provided by tkinter (for adjusting on the separate window)
@@ -99,7 +100,7 @@ class MainCtrlUI(Frame):
         self.camera_selector_label = Label(master=self.camera_selector_frame, text="Camera: ", style=self.camera_label_style_name)
         self.supported_cameras = ["Simulated", "Physical"]  # list of the names with the supported cameras
         self.selected_camera = StringVar(); self.selected_camera.set(self.supported_cameras[0])
-        self.camera_sel_style_name = 'Custom1.TMenubutton'
+        self.camera_sel_style_name = 'Custom1.TMenubutton'; self.active_camera = self.supported_cameras[0]
         self.widgets_styles.configure(self.camera_sel_style_name, foreground='#FFCD1B', background=self.bg_color)  # dark grey bg, orange fg
         self.camera_selector = OptionMenu(self.camera_selector_frame, self.selected_camera, self.supported_cameras[0], *self.supported_cameras,
                                           style=self.camera_sel_style_name, command=self.change_active_camera)
@@ -128,8 +129,12 @@ class MainCtrlUI(Frame):
         self.pack(fill=BOTH); self.update()  # commands for finally show all packed widgets
 
         # Initialize communication queues and triggers
-        self.commands2camera = Queue(maxsize=5); self.dataFromCamera = Queue(maxsize=10)
-        self.triggerCommands = Event(); self.triggerCameraData = Event()
+        self.commands2camera = Queue(maxsize=5); self.data_from_camera = Queue(maxsize=10)
+        self.trigger_commands = Event(); self.trigger_camera_data = Event()
+
+        # Initialization of the Simulated camera
+        self.camera_process = CameraWrapper(commands2camera=self.commands2camera, trigger_commands=self.trigger_commands,
+                                            data_camera=self.data_from_camera, trigger_data_camera=self.trigger_camera_data)
 
     # %% Acquisition
     def snap_image(self):
@@ -158,11 +163,15 @@ class MainCtrlUI(Frame):
         None.
 
         """
-        print("Selected camera:", selected_camera)
-        if not self.check_installed_drivers(selected_camera):
-            print(f"The required drivers for the '{selected_camera}' camera not installed")
-        else:
-            pass  # initialize the Camera Wrapper class for placing the ctrl logic in the dedicated process
+        if not selected_camera == self.active_camera:  # check that other than the current active camera selected
+            print("Selected camera:", selected_camera)
+            if not self.check_installed_drivers(selected_camera):
+                print(f"The required drivers for the '{selected_camera}' camera not installed. \nThe previously active camera remained")
+                self.selected_camera.set(self.active_camera)
+            else:
+                # TODO: implement closing of the current camera method
+                self.clean_queues_events()  # cleaning the queues for reconnecting to the new instance of a Camera class
+                pass  # initialize the Camera Wrapper class for placing the ctrl logic in the dedicated process
 
     def check_installed_drivers(self, selected_camera) -> bool:
         """
@@ -183,6 +192,20 @@ class MainCtrlUI(Frame):
             return True  # default assuming that simulated camera is always available as the fallback
         elif selected_camera == self.supported_cameras[1]:
             return False  # TODO: check 'fluoscenepy' import
+
+    # %% Utilities
+    def clean_queues_events(self):
+        """
+        Clean up queues and set Events to the default state.
+
+        Returns
+        -------
+        None.
+
+        """
+        self.data_from_camera = clean_mp_queue(self.data_from_camera)
+        self.commands2camera = clean_mp_queue(self.commands2camera)
+        self.trigger_commands.clear(); self.trigger_camera_data.clear()
 
     # %% Adjusting GUI
     def adjust_sizes(self):
@@ -251,8 +274,8 @@ class MainCtrlUI(Frame):
         None.
 
         """
-        self.dataFromCamera = clean_mp_queue(self.dataFromCamera); self.dataFromCamera.close()  # cleaning the queue
-        self.commands2camera = clean_mp_queue(self.dataFromCamera); self.commands2camera.close()
+        self.data_from_camera = clean_mp_queue(self.data_from_camera); self.data_from_camera.close()  # cleaning the queue
+        self.commands2camera = clean_mp_queue(self.commands2camera); self.commands2camera.close()
 
 
 # %% Wrapper UI class
@@ -278,7 +301,7 @@ class WrapperMainUI():
             dpi_changed = self.mainUI._changed_dpi
             self.tk_root = Tk()  # reinitialize main GUI class
             # initialize again GUI based on Frame()
-            self.mainUI = MainCtrlUI(master=self.tk_root, changed_dpp=dpi_changed); self.mainUI.mainloop()
+            self.mainUI = MainCtrlUI(master=self.tk_root, changed_dpi=dpi_changed); self.mainUI.mainloop()
 
     @staticmethod
     def fix_blurring():
