@@ -61,7 +61,7 @@ class MainCtrlUI(Frame):
         # Below - put the main window on the (+x, +y) coordinate away from the top left of the screen
         self.master.geometry(f"+{self.screen_width//4}+{self.screen_height//5}")
         self._changed_dpi = changed_dpi  # for disabling width / height controlling of an image
-        self.focus_force(); self.padx = 8; self.pady = 8
+        self.focus_force(); self.padx = 8; self.pady = 8; self.gui_refresh_timeout_ms = 0.004
 
         # Default values of GUI provided by tkinter (for adjusting on the separate window)
         self.main_font = font.nametofont("TkDefaultFont"); self.entry_font = font.nametofont("TkTextFont")
@@ -110,7 +110,8 @@ class MainCtrlUI(Frame):
         self.camera_init_status_style = 'Initialized.TLabel'; self.camera_error_status_style = 'Error.TLabel'
         self.widgets_styles.configure(self.camera_init_status_style, foreground='green')
         self.widgets_styles.configure(self.camera_error_status_style, foreground='red')
-        self.camera_inact_text = "Camera Inactive"; self.camera_act_text = "Camera Active"
+        self.camera_transition_style = 'Transition.TLabel'; self.widgets_styles.configure(self.camera_transition_style, foreground='orange')
+        self.camera_inact_text = "Camera Inactive"; self.camera_act_text = "Camera Active"; self.camera_transit_text = "Waiting..."
         self.camera_status_label = Label(master=self.buttons_frame, text=self.camera_inact_text, style=self.camera_error_status_style)
 
         # Buttons
@@ -133,8 +134,25 @@ class MainCtrlUI(Frame):
         self.trigger_commands = Event(); self.trigger_camera_data = Event()
 
         # Initialization of the Simulated camera
-        self.camera_process = CameraWrapper(commands2camera=self.commands2camera, trigger_commands=self.trigger_commands,
-                                            data_camera=self.data_from_camera, trigger_data_camera=self.trigger_camera_data)
+        self.camera_process = CameraWrapper(camera_type=self.selected_camera.get(), commands2camera=self.commands2camera,
+                                            trigger_commands=self.trigger_commands, data_camera=self.data_from_camera,
+                                            trigger_data_camera=self.trigger_camera_data)
+        self.camera_process.start(); time.sleep(self.gui_refresh_timeout_ms)  # starting the CameraWrapper Process loop
+        self.camera_status_label.config(text=self.camera_transit_text, style=self.camera_transition_style); self.update()
+        trigger_set = False  # for getting the confirmation that the trigger is set
+        self.camera_opened = False  # flag for showing that the camera is initialized
+        while not self.camera_opened and not trigger_set:
+            trigger_set = self.trigger_camera_data.wait(timeout=8.5)  # wait for set trigger with timeout of ... seconds
+            if trigger_set:
+                self.trigger_camera_data.clear()  # set to the default state
+                if not self.data_from_camera.empty():
+                    if self.data_from_camera.get_nowait() == "Initialized":
+                        print(f"{self.selected_camera.get()} Camera Opened"); self.camera_opened = True
+                        self.camera_status_label.config(text=self.camera_act_text, style=self.camera_init_status_style); self.update()
+            if not trigger_set or not self.camera_opened:
+                print(f"Trigger from {self.selected_camera.get()} Camera not received")
+                self.camera_status_label.config(text=self.camera_inact_text, style=self.camera_error_status_style)
+                trigger_set = True  # for stopping the loop
 
     # %% Acquisition
     def snap_image(self):
@@ -169,7 +187,7 @@ class MainCtrlUI(Frame):
                 print(f"The required drivers for the '{selected_camera}' camera not installed. \nThe previously active camera remained")
                 self.selected_camera.set(self.active_camera)
             else:
-                # TODO: implement closing of the current camera method
+                self.close_camera()  # closing the currently active camera
                 self.clean_queues_events()  # cleaning the queues for reconnecting to the new instance of a Camera class
                 pass  # initialize the Camera Wrapper class for placing the ctrl logic in the dedicated process
 
@@ -264,7 +282,34 @@ class MainCtrlUI(Frame):
         """
         self._relaunch = True; self.after(40, self.master.destroy)
 
-    # %% Close Main Win.
+    # %% Close Main Win. / Camera
+    def close_camera(self):
+        """
+        Quit the CameraWrapper Process loop.
+
+        Returns
+        -------
+        None.
+
+        """
+        if self.camera_opened:
+            self.camera_status_label.config(text=self.camera_act_text, style=self.camera_init_status_style); self.update()
+            self.commands2camera.put_nowait("Stop"); self.trigger_commands.set()
+            trigger_set = self.trigger_camera_data.wait(5.0)
+            if trigger_set:
+                received_data = self.data_from_camera.get_nowait()
+                if isinstance(received_data, str):
+                    print(f"{self.selected_camera.get()} Camera", received_data, "and Closed")
+                else:
+                    print("Received from the camera:", received_data)
+                if self.camera_process.is_alive():
+                    self.camera_process.join(2.0)
+            else:
+                print("Something wrong with the closing logic, the TIMEOUT happened in wait function")
+                self.camera_process.kill()
+            self.camera_status_label.config(text=self.camera_inact_text, style=self.camera_error_status_style)
+            self.camera_opened = False
+
     def destroy(self):
         """
         Rewrite the behaviour of the main window then it's closed.
@@ -274,6 +319,9 @@ class MainCtrlUI(Frame):
         None.
 
         """
+        self.close_camera()  # close of a camera logic
+        if self.camera_process.is_alive():  # for fallback logic
+            print("CameraWrapper Process is still alive, check the closing logic in it."); self.camera_process.join(0.25)
         self.data_from_camera = clean_mp_queue(self.data_from_camera); self.data_from_camera.close()  # cleaning the queue
         self.commands2camera = clean_mp_queue(self.commands2camera); self.commands2camera.close()
 
