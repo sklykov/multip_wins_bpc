@@ -74,6 +74,7 @@ class CameraWrapper(Process):
         self.commands_queue = commands2camera; self.trigger_commands = trigger_commands
         self.data_queue = data_camera; self.trigger_data = trigger_data_camera
         self.script_path = Path(__file__).parent.absolute()  # for possible access the API python wrappers
+        self.sleep_time_actions_ms = 0.004  # for putting artificial delay between setting the trigger and sending the data
         if data_triggered_queues is not None and queues_triggers is not None:
             if len(data_triggered_queues) > 0 and len(queues_triggers) > 0 and len(data_triggered_queues) == len(queues_triggers):
                 self.data_triggered_queues = data_triggered_queues; self.queues_triggers = queues_triggers
@@ -110,7 +111,8 @@ class CameraWrapper(Process):
         if self.initialized:
             if self.camera_type == "Simulated":
                 self.camera_initialized = True  # placeholder for the initialization of the camera
-                self.data_queue.put_nowait("Initialized"); self.trigger_data.set()
+                # Dev Note about putting time.sleep() below - if the scripts launched in Python debugger by Visual Studio Code
+                self.data_queue.put_nowait("Initialized"); time.sleep(self.sleep_time_actions_ms); self.trigger_data.set()
             else:
                 self.initialized = False  # if there is no initialization logic, by default set to False
 
@@ -127,7 +129,7 @@ class CameraWrapper(Process):
                     if command == "Stop" or command == "Quit":
                         self.close()  # close the camera wrapper
                         self.initialized = False  # set the flag for the loop to stop it
-                        self.data_queue.put_nowait("Stopped"); self.trigger_data.set()
+                        self.data_queue.put_nowait("Stopped"); time.sleep(self.sleep_time_actions_ms); self.trigger_data.set()
                 # Handling exceptions by the getting the commands from the queue
                 except (Empty, Full):
                     self.data_queue.put_nowait(Exception("Queue with commands or empty, either full. The CameraWrapper Process stopped"))

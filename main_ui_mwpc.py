@@ -32,6 +32,7 @@ import time
 import inspect
 from datetime import datetime  # for getting current year
 from multiprocessing import Queue, Event
+from queue import Empty
 
 # %% Local imports
 if __name__ == "__main__" or __name__ == Path(__file__).stem or __name__ == "__mp_main__":
@@ -61,7 +62,7 @@ class MainCtrlUI(Frame):
         # Below - put the main window on the (+x, +y) coordinate away from the top left of the screen
         self.master.geometry(f"+{self.screen_width//4}+{self.screen_height//5}")
         self._changed_dpi = changed_dpi  # for disabling width / height controlling of an image
-        self.focus_force(); self.padx = 8; self.pady = 8; self.gui_refresh_timeout_ms = 0.004
+        self.focus_force(); self.padx = 8; self.pady = 8; self.sleep_time_actions_ms = 0.004
 
         # Default values of GUI provided by tkinter (for adjusting on the separate window)
         self.main_font = font.nametofont("TkDefaultFont"); self.entry_font = font.nametofont("TkTextFont")
@@ -137,7 +138,7 @@ class MainCtrlUI(Frame):
         self.camera_process = CameraWrapper(camera_type=self.selected_camera.get(), commands2camera=self.commands2camera,
                                             trigger_commands=self.trigger_commands, data_camera=self.data_from_camera,
                                             trigger_data_camera=self.trigger_camera_data)
-        self.camera_process.start(); time.sleep(self.gui_refresh_timeout_ms)  # starting the CameraWrapper Process loop
+        self.camera_process.start(); time.sleep(self.sleep_time_actions_ms)  # starting the CameraWrapper Process loop
         self.camera_status_label.config(text=self.camera_transit_text, style=self.camera_transition_style); self.update()
         trigger_set = False  # for getting the confirmation that the trigger is set
         self.camera_opened = False  # flag for showing that the camera is initialized
@@ -294,16 +295,21 @@ class MainCtrlUI(Frame):
         """
         if self.camera_opened:
             self.camera_status_label.config(text=self.camera_act_text, style=self.camera_init_status_style); self.update()
-            self.commands2camera.put_nowait("Stop"); self.trigger_commands.set()
-            trigger_set = self.trigger_camera_data.wait(5.0)
+            self.commands2camera.put_nowait("Stop"); time.sleep(self.sleep_time_actions_ms); self.trigger_commands.set()
+            trigger_set = self.trigger_camera_data.wait(5.5); time.sleep(self.sleep_time_actions_ms)
             if trigger_set:
-                received_data = self.data_from_camera.get_nowait()
-                if isinstance(received_data, str):
-                    print(f"{self.selected_camera.get()} Camera", received_data, "and Closed")
-                else:
-                    print("Received from the camera:", received_data)
-                if self.camera_process.is_alive():
-                    self.camera_process.join(2.0)
+                try:
+                    received_data = self.data_from_camera.get_nowait()
+                    if isinstance(received_data, str):
+                        print(f"{self.selected_camera.get()} Camera", received_data, "and Closed")
+                    else:
+                        print("Received from the camera:", received_data)
+                    if self.camera_process.is_alive():
+                        self.camera_process.join(2.0)
+                except Empty:
+                    print("Something went wrong with the communication, the CameraWrapper Process will be killed if it's still alive")
+                    if self.camera_process.is_alive():
+                        self.camera_process.kill()
             else:
                 print("Something wrong with the closing logic, the TIMEOUT happened in wait function")
                 self.camera_process.kill()
@@ -312,7 +318,7 @@ class MainCtrlUI(Frame):
 
     def destroy(self):
         """
-        Rewrite the behaviour of the main window then it's closed.
+        Rewrite the behavior of the main window then it's closed.
 
         Returns
         -------
@@ -321,7 +327,8 @@ class MainCtrlUI(Frame):
         """
         self.close_camera()  # close of a camera logic
         if self.camera_process.is_alive():  # for fallback logic
-            print("CameraWrapper Process is still alive, check the closing logic in it."); self.camera_process.join(0.25)
+            print("CameraWrapper Process is still alive, check the closing logic in it."); self.camera_process.join(0.2)
+            self.camera_process.kill()
         self.data_from_camera = clean_mp_queue(self.data_from_camera); self.data_from_camera.close()  # cleaning the queue
         self.commands2camera = clean_mp_queue(self.commands2camera); self.commands2camera.close()
 
