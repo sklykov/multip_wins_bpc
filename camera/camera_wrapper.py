@@ -17,9 +17,10 @@ if __name__ == "__main__" or __name__ == Path(__file__).stem or __name__ == "__m
     from cameras import *
 else:
     from .cameras import *
-local_modules = locals()  # get the locally imported modules for defining the content of "cameras" module
-# Below the automatic exploring of the imported modules and Associated names
+local_modules = locals()  # get as a dictionary the locally imported modules for defining the content of "cameras" module
+# Below the automatic exploring of the imported modules and Associated names. Class definition should contain "Camera" in a class name
 cameras_cls_names = [camera_class for camera_class in local_modules.keys() if "Camera" in camera_class]
+# Collect actual classes for using them below on UI
 cameras_ctrl_classes = [local_modules[camera_name] for camera_name in cameras_cls_names]
 cameras_ctrl_types = [ctrl_class.camera_type() for ctrl_class in cameras_ctrl_classes]
 
@@ -109,10 +110,13 @@ class CameraWrapper(Process):
         """
         # Starting the Process loop. The camera connection should be initialized here.
         if self.initialized:
-            if self.camera_type == "Simulated":
-                self.camera_initialized = True  # placeholder for the initialization of the camera
+            if self.camera_type == self.supported_cameras[0]:  # automatic discovery of the imported classes
+                self.camera_ref = cameras_ctrl_classes[0]()  # initialize the camera controlling class
+                self.camera_initialized = self.camera_ref.initialize()  # explicit initialization method
+                # self.camera_initialized = True  # placeholder for the initialization of the camera
                 # Dev Note about putting time.sleep() below - if the scripts launched in Python debugger by Visual Studio Code
-                self.data_queue.put_nowait("Initialized"); time.sleep(self.sleep_time_actions_ms); self.trigger_data.set()
+                if self.camera_initialized:
+                    self.data_queue.put_nowait("Initialized"); time.sleep(self.sleep_time_actions_ms); self.trigger_data.set()
             else:
                 self.initialized = False  # if there is no initialization logic, by default set to False
 
@@ -125,7 +129,17 @@ class CameraWrapper(Process):
             if not self.commands_queue.empty():
                 try:
                     command = self.commands_queue.get_nowait()  # Handling the commands from the main script
-                    # Close the camera, stop this loop
+                    # print("Camera received a command:", command)
+                    # Snap single image
+                    if command == "Snap" or command == "Snap Image":
+                        image = self.camera_ref.snap_image()
+                        # print("Received image shape in Camera class:", image.shape, flush=True)
+                        if image is not None:
+                            self.data_queue.put_nowait(image)
+                            # print("Camera sent image on Queue", flush=True)
+                        else:
+                            self.data_queue.put_nowait("String placeholder Image")
+                        self.trigger_data.set()  # set the trigger that the data is available
                     if command == "Stop" or command == "Quit":
                         self.close()  # close the camera wrapper
                         self.initialized = False  # set the flag for the loop to stop it

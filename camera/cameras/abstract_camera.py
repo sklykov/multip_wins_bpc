@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Camera abstract class.
+Camera abstract class that should be inherited by the actual camera controlling class.
 
 @author: sklykov, @license: MIT license
 
@@ -19,7 +19,7 @@ class AbstractCamera(ABC):
         pass
 
     @abstractmethod
-    def initialize():
+    def initialize(self) -> bool:
         """
         Open (initialize) connection to a camera.
 
@@ -31,7 +31,7 @@ class AbstractCamera(ABC):
         pass
 
     @abstractmethod
-    def close():
+    def close(self):
         """
         Close the connection.
 
@@ -43,7 +43,7 @@ class AbstractCamera(ABC):
         pass
 
     @abstractmethod
-    def snap_image():
+    def snap_image(self):
         """
         Snap single image.
 
@@ -54,7 +54,7 @@ class AbstractCamera(ABC):
         """
         pass
 
-    @property
+    @property  # this decorator turns the method into readable-only class attribute
     @abstractmethod
     def camera_type() -> str:
         """
@@ -67,3 +67,16 @@ class AbstractCamera(ABC):
 
         """
         pass
+
+    def is_valid_class_name(self) -> bool:
+        """
+        Check actual camera class name for validity and further auto import in the main module.
+
+        Returns
+        -------
+        bool
+            True, if actual camera class has "Camera" in it, like class "SimulatedCamera".
+
+        """
+        class_name = self.__class__.__name__  # getting the actual runtime class name for an instance (child class)
+        return "Camera" in class_name  # returns True if the camera class name is valid (contains "Camera" in it)

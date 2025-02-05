@@ -25,7 +25,7 @@ class SimulatedCamera(AbstractCamera):
     """Simulated camera with the noise simulation."""
 
     def __init__(self):
-        pass
+        print("Simulated Camera class initialized", flush=True); time.sleep(0.025)
 
     def camera_type() -> str:
         """
@@ -39,7 +39,7 @@ class SimulatedCamera(AbstractCamera):
         """
         return "Simulated"
 
-    def initialize():
+    def initialize(self) -> bool:
         """
         Open camera logic.
 
@@ -49,8 +49,9 @@ class SimulatedCamera(AbstractCamera):
 
         """
         time.sleep(0.005)
+        return True
 
-    def snap_image() -> np.ndarray:
+    def snap_image(self) -> np.ndarray:
         """
         Generate random (noisy) picture.
 
@@ -60,9 +61,10 @@ class SimulatedCamera(AbstractCamera):
             2D matrix as the image.
 
         """
+        time.sleep(21/1000)  # short exposure time
         return np.random.randint(0, high=255, size=(480, 640), dtype='uint8')
 
-    def close():
+    def close(self):
         """
         Close camera logic.
 

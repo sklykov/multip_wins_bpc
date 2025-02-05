@@ -26,13 +26,15 @@ import platform
 import ctypes
 from pathlib import Path
 import matplotlib.pyplot as plt; plt.ion()
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg  # import canvas container from matplotlib for tkinter
+# import canvas container from matplotlib for tkinter (for toolbar - NavigationToolbar2Tk)
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.figure as pltFigure   # matplotlib figure for showing images
 import time
 import inspect
 from datetime import datetime  # for getting current year
 from multiprocessing import Queue, Event
 from queue import Empty
+import numpy as np
 
 # %% Local imports
 if __name__ == "__main__" or __name__ == Path(__file__).stem or __name__ == "__mp_main__":
@@ -89,6 +91,15 @@ class MainCtrlUI(Frame):
         # Figure for showing of images
         self.image_figure = pltFigure.Figure(figsize=(self.figure_size_w, self.figure_size_h))  # empty figure with default sizes (WxH)
         self.image_canvas = FigureCanvasTkAgg(self.image_figure, master=self); self.plot_widget = self.image_canvas.get_tk_widget()
+        self.current_image = None; self.snap_image_obtained = False; self.image_figure_axes = None; self.display_image = False
+        self.img_h = None; self.img_w = None
+        # Assign subplot to the created figure
+        if self.image_figure_axes is None:
+            self.image_figure_axes = self.image_figure.add_subplot(); self.image_figure_axes.axis('off'); self.image_figure.tight_layout()
+            self.image_figure.subplots_adjust(left=0, bottom=0, right=1, top=1)  # remove white borders
+            # self.image_figure_axes.format_coord = self.format_coord
+            self.image_figure_axes.format_cursor_data = lambda: ''  # remove pixel value in [...] on a widget
+        self.imshowing = None  # AxesImage instance
 
         # Select the camera from the list
         self.buttons_frame = Frame(master=self)  # for placing all buttons in it
@@ -165,7 +176,61 @@ class MainCtrlUI(Frame):
         None.
 
         """
-        pass
+        self.commands2camera.put_nowait("Snap"); time.sleep(self.sleep_time_actions_ms); self.trigger_commands.set()
+        trigger_set = self.trigger_camera_data.wait(timeout=5.5); time.sleep(self.sleep_time_actions_ms)
+        if trigger_set:
+            self.trigger_camera_data.clear()  # set to the default state
+            try:
+                received_data = self.data_from_camera.get_nowait()
+                if isinstance(received_data, np.ndarray):
+                    self.current_image = received_data; self.snap_image_obtained = True; self.display_image = True
+                    self.after(2, self.show_image)  # sent asynchronous call to show an image
+                else:
+                    print("Received from the camera:", received_data, flush=True)
+            except Empty:
+                print("No Image received from Queue, but the trigger is set", flush=True)
+        else:
+            print("Something wrong with the Snap Image logic, the TIMEOUT happened in a trigger wait function", flush=True)
+
+    # %% Show acquired image
+    def show_image(self):
+        """
+        Update image by direct request from function (not threaded).
+
+        Returns
+        -------
+        None.
+
+        """
+        # time.sleep(self.image_refresh_delay)
+        if self.display_image:
+            if self.current_image is not None and isinstance(self.current_image, np.ndarray):
+                # Precalculate min / max pixel value on the image
+                self.min_pixel_value = np.min(self.current_image); self.max_pixel_value = np.max(self.current_image)
+                # Check that the image sizes changed or not, and update the graph accordingly
+                if self.img_w is None and self.img_h is None:
+                    self.img_h, self.img_w = self.current_image.shape
+                else:
+                    h, w = self.current_image.shape
+                    if self.img_h != h or self.img_w != w:
+                        # self.refresh_graph()  # refresh container for plotting image with changed width and height
+                        self.img_h = h; self.img_w = w
+                # Initialize the AxesImage if this function called 1st time
+                if self.imshowing is None:
+                    self.imshowing = self.image_figure_axes.imshow(self.current_image, cmap='gray', interpolation='none',
+                                                                   vmin=self.min_pixel_value, vmax=self.max_pixel_value)
+                    # self.imshowing.format_cursor_data = self.cursor_wrapper  # remove pixel value in [...] on a widget
+                    self.imshowing.set_data(self.current_image)  # set data for AxesImage for updating image content
+                    self.image_canvas.draw_idle()
+                else:
+                    self.imshowing.set_data(self.current_image)  # set data for AxesImage for updating image content
+                    self.imshowing.set_clim(vmin=self.min_pixel_value, vmax=self.max_pixel_value)
+                    self.image_canvas.draw_idle()
+                # assuming that image intensities are integer values (float image is [0, 1] range of pixel values)
+                if isinstance(self.max_pixel_value, float) and self.max_pixel_value > 1.1:
+                    self.max_pixel_value = int(np.round(self.max_pixel_value, 0))
+                    self.min_pixel_value = int(np.round(self.max_pixel_value, 0))
+            self.display_image = False
 
     # %% Camera control
     def change_active_camera(self, selected_camera):
@@ -210,7 +275,7 @@ class MainCtrlUI(Frame):
         if selected_camera == "Simulated":
             return True  # default assuming that simulated camera is always available as the fallback
         elif selected_camera == self.supported_cameras[1]:
-            return False  # TODO: check 'fluoscenepy' import
+            return False  # TODO: implement logic for the next camera
 
     # %% Utilities
     def clean_queues_events(self):
