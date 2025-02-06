@@ -8,9 +8,14 @@ Wrapper for the camera control.
 # %% Global imports
 from multiprocessing import Process, Queue, Event
 from queue import Empty, Full
+from queue import Queue as thQueue
+from threading import Thread
 from pathlib import Path
 from typing import Sequence
 import time
+from datetime import datetime
+from PIL import Image, ImageDraw, ImageFont
+import numpy as np
 
 # %% Local imports
 if __name__ == "__main__" or __name__ == Path(__file__).stem or __name__ == "__mp_main__":
@@ -76,6 +81,7 @@ class CameraWrapper(Process):
         self.data_queue = data_camera; self.trigger_data = trigger_data_camera
         self.script_path = Path(__file__).parent.absolute()  # for possible access the API python wrappers
         self.sleep_time_actions_ms = 0.004  # for putting artificial delay between setting the trigger and sending the data
+        self.record_flag = False  # flag for start recording streamed single snapped images
         if data_triggered_queues is not None and queues_triggers is not None:
             if len(data_triggered_queues) > 0 and len(queues_triggers) > 0 and len(data_triggered_queues) == len(queues_triggers):
                 self.data_triggered_queues = data_triggered_queues; self.queues_triggers = queues_triggers
@@ -132,7 +138,20 @@ class CameraWrapper(Process):
                     # print("Camera received a command:", command)
                     # Snap single image
                     if command == "Snap" or command == "Snap Image":
-                        image = self.camera_ref.snap_image()
+                        # if self.record_flag:
+                        #     t1 = time.perf_counter()
+                        image = self.camera_ref.snap_image()  # calling the implemented method from an abstract class
+                        if self.record_flag:
+                            # passed_ms = int(round(1000.0*(time.perf_counter() - t1), 0))  # measured time for single acquisition
+                            timestamp_str = datetime.fromtimestamp(time.time()).strftime('%H:%M:%S.%f')[:-3]
+                            # print("Passed ms:", passed_ms, flush=True)
+                            # print("Timestamp: ", timestamp_str, flush=True)
+                            pil_img = Image.fromarray(image)
+                            draw_handle = ImageDraw.Draw(pil_img)
+                            font = ImageFont.truetype(font='arial.ttf', size=20)
+                            position = (25, 25)  # (x, y)
+                            draw_handle.text(position, timestamp_str, fill=0, font=font)  # Add black text to a gray image
+                            image = np.array(pil_img)
                         # print("Received image shape in Camera class:", image.shape, flush=True)
                         if image is not None:
                             self.data_queue.put_nowait(image)
@@ -140,7 +159,13 @@ class CameraWrapper(Process):
                         else:
                             self.data_queue.put_nowait("String placeholder Image")
                         self.trigger_data.set()  # set the trigger that the data is available
-                    if command == "Stop" or command == "Quit":
+                    elif command == "Start Recording":
+                        self.record_flag = True
+                        print("Start recording", flush=True)
+                    elif command == "Stop Recording":
+                        self.record_flag = False
+                        print("Stop recording", flush=True)
+                    elif command == "Stop" or command == "Quit":
                         self.close()  # close the camera wrapper
                         self.initialized = False  # set the flag for the loop to stop it
                         self.data_queue.put_nowait("Stopped"); time.sleep(self.sleep_time_actions_ms); self.trigger_data.set()
@@ -152,6 +177,8 @@ class CameraWrapper(Process):
                 self.data_queue.put_nowait(Exception("Await to receive the command, by the Queue with commands is empty"))
                 self.trigger_data.set(); self.initialized = False
 
+    # %% Record method (can be moved in an additional Process isntead of Thread)
+
     # %% Utility methods
     def close(self):
         """
@@ -162,5 +189,4 @@ class CameraWrapper(Process):
         None.
 
         """
-        if self.camera_type == "Simulated":
-            self.camera_initialized = False; time.sleep(0.005)  # camera closing logic
+        self.camera_ref.close()  # closing logic should be implemented by the camera

@@ -79,14 +79,16 @@ class MainCtrlUI(Frame):
 
         # Default values of variables used in the methods
         self.adjust_sizes_win = None; self.windows_resizable = True
-        self.figure_size_w = 6.2; self.figure_size_h = 5.8  # default width and height, measured in inches
+        self.figure_size_w = 6.4; self.figure_size_h = 5.9  # default width and height, measured in inches
 
         # Adding menu bar to the master window (root window)
         self.menubar = Menu(self.master); self.master.config(menu=self.menubar)
         # tearoff options removes link for opening a Menu in an additional window
         self.actions_menu = Menu(master=self.menubar, tearoff=0, font=self.menu_font)
-        self.actions_menu.add_command(label="Adjust Sizes", command=self.adjust_sizes)
-        self.menubar.add_cascade(label="Actions", menu=self.actions_menu)
+        self.labels_actions_menu = []; self.labels_actions_menu.append("Adjust Sizes")
+        for label in self.labels_actions_menu:
+            self.actions_menu.add_command(label=label, command=self.adjust_sizes)
+        self.menubar.add_cascade(label="Settings", menu=self.actions_menu)
 
         # Figure for showing of images
         self.image_figure = pltFigure.Figure(figsize=(self.figure_size_w, self.figure_size_h))  # empty figure with default sizes (WxH)
@@ -100,6 +102,10 @@ class MainCtrlUI(Frame):
             # self.image_figure_axes.format_coord = self.format_coord
             self.image_figure_axes.format_cursor_data = lambda: ''  # remove pixel value in [...] on a widget
         self.imshowing = None  # AxesImage instance
+
+        # Program parameters, variables
+        self.snaps_stream_flag = False; self.snaps_stream_task = None
+        self.record_flag = False
 
         # Select the camera from the list
         self.buttons_frame = Frame(master=self)  # for placing all buttons in it
@@ -131,10 +137,26 @@ class MainCtrlUI(Frame):
         self.snap_image_btn = Button(master=self.buttons_frame, text="Snap Image", command=self.snap_image,
                                      style=self.single_click_btn_style_name)
 
+        self.snap_stream_on_btn_style_name = 'SnapStreamOn.TButton'; self.snap_stream_off_btn_style_name = 'SnapStreamOff.TButton'
+        self.snap_stream_on_text = "Start Snaps Stream"; self.snap_stream_off_text = "Stop Snaps Stream"
+        self.widgets_styles.configure(self.snap_stream_on_btn_style_name, foreground='#116212', background="#F2F0F2")
+        self.widgets_styles.configure(self.snap_stream_off_btn_style_name, foreground='#A61205', background="#F2F0F2")
+        self.snap_stream_btn = Button(master=self.buttons_frame, text=self.snap_stream_on_text, command=self.snap_stream,
+                                      style=self.snap_stream_on_btn_style_name)
+
+        self.record_stream_on_btn_style_name = 'RecordStreamOn.TButton'; self.record_stream_off_btn_style_name = 'RecordStreamOff.TButton'
+        self.record_stream_on_text = "Start Recording"; self.record_stream_off_text = "Stop Recording"
+        self.widgets_styles.configure(self.record_stream_on_btn_style_name, foreground='#e32818', background="#dadef5")
+        self.widgets_styles.configure(self.record_stream_off_btn_style_name, foreground='#0025d0', background="#f0f1fb")
+        self.record_stream_btn = Button(master=self.buttons_frame, text=self.record_stream_on_text, command=self.record_stream,
+                                        style=self.record_stream_on_btn_style_name)
+
         # Placing GUI elements in the container (Frame) which in turn is placed below along with the plot_widget
         self.camera_selector_frame.pack(side=TOP, padx=self.padx, pady=self.pady//2)
         self.camera_status_label.pack(side=TOP, padx=self.padx, pady=self.pady)
-        self.snap_image_btn.pack(side=TOP, padx=self.padx, pady=self.pady*2)
+        self.snap_image_btn.pack(side=TOP, padx=self.padx, pady=self.pady)
+        self.snap_stream_btn.pack(side=TOP, padx=self.padx, pady=self.pady)
+        self.record_stream_btn.pack(side=TOP, padx=self.padx, pady=self.pady)
 
         # Pack plot widget with the image and Frame with buttons (grid layout removed)
         self.plot_widget.pack(side=LEFT, padx=self.padx, pady=self.pady)  # The biggest GUI element - image widget
@@ -144,6 +166,10 @@ class MainCtrlUI(Frame):
         # Initialize communication queues and triggers
         self.commands2camera = Queue(maxsize=5); self.data_from_camera = Queue(maxsize=10)
         self.trigger_commands = Event(); self.trigger_camera_data = Event()
+
+        # Disabling some buttons at the start
+        self.snap_stream_btn.configure(state="disabled"); self.snap_image_btn.configure(state="disabled")
+        self.record_stream_btn.configure(state="disabled")
 
         # Initialization of the Simulated camera
         self.camera_process = CameraWrapper(camera_type=self.selected_camera.get(), commands2camera=self.commands2camera,
@@ -161,6 +187,7 @@ class MainCtrlUI(Frame):
                     if self.data_from_camera.get_nowait() == "Initialized":
                         print(f"{self.selected_camera.get()} Camera Opened"); self.camera_opened = True
                         self.camera_status_label.config(text=self.camera_act_text, style=self.camera_init_status_style); self.update()
+                        self.snap_stream_btn.configure(state="normal"); self.snap_image_btn.configure(state="normal")
             if not trigger_set or not self.camera_opened:
                 print(f"Trigger from {self.selected_camera.get()} Camera not received")
                 self.camera_status_label.config(text=self.camera_inact_text, style=self.camera_error_status_style)
@@ -184,13 +211,81 @@ class MainCtrlUI(Frame):
                 received_data = self.data_from_camera.get_nowait()
                 if isinstance(received_data, np.ndarray):
                     self.current_image = received_data; self.snap_image_obtained = True; self.display_image = True
-                    self.after(2, self.show_image)  # sent asynchronous call to show an image
+                    self.after(2, self.show_image)  # schedule asynchronous call to show an image
                 else:
                     print("Received from the camera:", received_data, flush=True)
+                    self.current_image = None; self.display_image = False
             except Empty:
                 print("No Image received from Queue, but the trigger is set", flush=True)
+                self.current_image = None; self.display_image = False
         else:
             print("Something wrong with the Snap Image logic, the TIMEOUT happened in a trigger wait function", flush=True)
+            self.current_image = None; self.display_image = False
+
+    def snap_stream(self):
+        """
+        Imitates continuous clicking on "Snap Image" button.
+
+        Returns
+        -------
+        None.
+
+        """
+        self.snaps_stream_flag = not self.snaps_stream_flag  # change the flag
+        if self.snaps_stream_flag:
+            self.snap_image_btn.config(state="disabled")  # disable the single snap button
+            self.record_stream_btn.configure(state="normal")
+            # Disable labels in Settings menu
+            for label in self.labels_actions_menu:
+                self.actions_menu.entryconfig(label, state="disabled")
+            self.snap_stream_btn.configure(style=self.snap_stream_off_btn_style_name, text=self.snap_stream_off_text)
+            if self.snaps_stream_task is None:
+                self.snaps_stream_task = self.after(3, self.run_snap_stream)
+        else:
+            if self.record_flag:
+                self.record_stream()
+            if self.snaps_stream_task is not None:
+                self.after_cancel(self.snaps_stream_task); time.sleep(self.sleep_time_actions_ms); self.snaps_stream_task = None
+            self.snap_image_btn.config(state="normal"); self.record_stream_btn.configure(state="disabled")
+            # Enable labels in Settings menu
+            for label in self.labels_actions_menu:
+                self.actions_menu.entryconfig(label, state="normal")
+            self.snap_stream_btn.configure(style=self.snap_stream_on_btn_style_name, text=self.snap_stream_on_text)
+
+    def run_snap_stream(self):
+        """
+        Perform continuous call for snap_image() method.
+
+        Returns
+        -------
+        None.
+
+        """
+        self.snap_image()  # explicit call for snap function
+        if self.snaps_stream_flag:
+            self.snaps_stream_task = self.after(1, self.run_snap_stream)  # schedule next task
+
+    # %% Recording
+    def record_stream(self):
+        """
+        Start / stop recording of single images stream.
+
+        Returns
+        -------
+        None.
+
+        """
+        self.record_flag = not self.record_flag
+        if self.record_flag:
+            if self.snaps_stream_flag and self.snaps_stream_task is not None:
+                self.after_cancel(self.snaps_stream_task)  # make a pause in the live stream
+            self.commands2camera.put_nowait("Start Recording"); time.sleep(self.sleep_time_actions_ms//2); self.trigger_commands.set()
+            self.record_stream_btn.configure(style=self.record_stream_off_btn_style_name, text=self.record_stream_off_text)
+            if self.snaps_stream_flag:
+                self.snaps_stream_task = self.after(1, self.run_snap_stream)  # resume the live stream
+        else:
+            self.commands2camera.put_nowait("Stop Recording"); time.sleep(self.sleep_time_actions_ms//2); self.trigger_commands.set()
+            self.record_stream_btn.configure(style=self.record_stream_on_btn_style_name, text=self.record_stream_on_text)
 
     # %% Show acquired image
     def show_image(self):
@@ -210,12 +305,20 @@ class MainCtrlUI(Frame):
                 # Check that the image sizes changed or not, and update the graph accordingly
                 if self.img_w is None and self.img_h is None:
                     self.img_h, self.img_w = self.current_image.shape
+                    # Below - automatic change of figure width for adjusting to the ratio of acquired image width / heigt
+                    if self.figure_size_w / self.figure_size_h != self.img_w / self.img_h:
+                        self.figure_size_h = round(self.figure_size_w*(self.img_h / self.img_w), 1)  # change height of a figure (not shift UI)
+                        self.reinitialize_image_figure(True)  # flag for avoiding recall this method in the end of the called method
                 else:
                     h, w = self.current_image.shape
                     if self.img_h != h or self.img_w != w:
                         # self.refresh_graph()  # refresh container for plotting image with changed width and height
                         self.img_h = h; self.img_w = w
                 # Initialize the AxesImage if this function called 1st time
+                if self.image_figure_axes is None:
+                    self.image_figure_axes = self.image_figure.add_subplot(); self.image_figure_axes.axis('off')
+                    self.image_figure.tight_layout()
+                    self.image_figure.subplots_adjust(left=0, bottom=0, right=1, top=1)  # remove white borders
                 if self.imshowing is None:
                     self.imshowing = self.image_figure_axes.imshow(self.current_image, cmap='gray', interpolation='none',
                                                                    vmin=self.min_pixel_value, vmax=self.max_pixel_value)
@@ -248,7 +351,9 @@ class MainCtrlUI(Frame):
 
         """
         if not selected_camera == self.active_camera:  # check that other than the current active camera selected
+            self.snap_stream_btn.configure(state="disabled"); self.snap_image_btn.configure(state="disabled")
             print("Selected camera:", selected_camera)
+            self.img_w = None; self.img_h = None  # put image WxH to the default values
             if not self.check_installed_drivers(selected_camera):
                 print(f"The required drivers for the '{selected_camera}' camera not installed. \nThe previously active camera remained")
                 self.selected_camera.set(self.active_camera)
@@ -256,6 +361,7 @@ class MainCtrlUI(Frame):
                 self.close_camera()  # closing the currently active camera
                 self.clean_queues_events()  # cleaning the queues for reconnecting to the new instance of a Camera class
                 pass  # initialize the Camera Wrapper class for placing the ctrl logic in the dedicated process
+            self.snap_stream_btn.configure(state="normal"); self.snap_image_btn.configure(state="normal")
 
     def check_installed_drivers(self, selected_camera) -> bool:
         """
@@ -310,7 +416,7 @@ class MainCtrlUI(Frame):
             else:
                 self.adjust_sizes_win = AdjustSizesWin(master_widget=self, windows_resizable=self.windows_resizable)
 
-    def reinitialize_image_figure(self):
+    def reinitialize_image_figure(self, avoid_show_image: bool = False):
         """
         Reinitialize the figure with update sizes.
 
@@ -320,10 +426,15 @@ class MainCtrlUI(Frame):
 
         """
         self.plot_widget.destroy(); self.buttons_frame.pack_forget()
+        del self.imshowing; del self.image_figure_axes; del self.image_figure
         self.image_figure = pltFigure.Figure(figsize=(self.figure_size_w, self.figure_size_h))  # empty figure with changed
         self.image_canvas = FigureCanvasTkAgg(self.image_figure, master=self); self.plot_widget = self.image_canvas.get_tk_widget()
         self.plot_widget.pack(side=LEFT, padx=self.padx, pady=self.pady); self.buttons_frame.pack(side=TOP, padx=self.padx, pady=self.pady)
         self.image_figure.set_figwidth(self.figure_size_w); self.image_figure.set_figheight(self.figure_size_h)
+        self.image_figure_axes = None; self.imshowing = None
+        if self.current_image is not None and not avoid_show_image:  # if there was some current image displayed, it will redisplay it
+            self.display_image = True  # explicit flag for displaying an image
+            self.after(2, self.show_image)  # schedule asynchronous call to show an image
 
     def adjust_fonts(self):
         """
@@ -358,10 +469,12 @@ class MainCtrlUI(Frame):
         None.
 
         """
+        if self.snaps_stream_flag:
+            self.snap_stream()  # simulates click on stop stream button
         if self.camera_opened:
             self.camera_status_label.config(text=self.camera_act_text, style=self.camera_init_status_style); self.update()
             self.commands2camera.put_nowait("Stop"); time.sleep(self.sleep_time_actions_ms); self.trigger_commands.set()
-            trigger_set = self.trigger_camera_data.wait(5.5); time.sleep(self.sleep_time_actions_ms)
+            trigger_set = self.trigger_camera_data.wait(4.0); time.sleep(self.sleep_time_actions_ms)
             if trigger_set:
                 try:
                     received_data = self.data_from_camera.get_nowait()
