@@ -15,6 +15,7 @@ Documents/
 *.pdf
 .idea/
 .vscode/
+*.mov
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

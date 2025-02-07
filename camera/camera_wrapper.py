@@ -16,6 +16,7 @@ import time
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
+import cv2
 
 # %% Local imports
 if __name__ == "__main__" or __name__ == Path(__file__).stem or __name__ == "__mp_main__":
@@ -79,9 +80,14 @@ class CameraWrapper(Process):
         """
         self.commands_queue = commands2camera; self.trigger_commands = trigger_commands
         self.data_queue = data_camera; self.trigger_data = trigger_data_camera
-        self.script_path = Path(__file__).parent.absolute()  # for possible access the API python wrappers
+        self.script_path = Path(__file__).parent.parent.absolute()  # for possible access the API python wrappers
         self.sleep_time_actions_ms = 0.004  # for putting artificial delay between setting the trigger and sending the data
         self.record_flag = False  # flag for start recording streamed single snapped images
+        self.fps = None  # will automatically measure and correct FPS (NOTE if there is direct control for setting exposure time)
+        self.exp_time_changed = False  # flag for checking if exp. time or camera FPS setting changed
+        self.images2record = None  # placeholder for queue with images for recording
+        self.video_file_path = None  # placeholder for a video file path used for recording
+        # Checking input parameters
         if data_triggered_queues is not None and queues_triggers is not None:
             if len(data_triggered_queues) > 0 and len(queues_triggers) > 0 and len(data_triggered_queues) == len(queues_triggers):
                 self.data_triggered_queues = data_triggered_queues; self.queues_triggers = queues_triggers
@@ -138,20 +144,29 @@ class CameraWrapper(Process):
                     # print("Camera received a command:", command)
                     # Snap single image
                     if command == "Snap" or command == "Snap Image":
-                        # if self.record_flag:
-                        #     t1 = time.perf_counter()
+                        t1 = time.perf_counter()  # will be used for setting FPS setting
                         image = self.camera_ref.snap_image()  # calling the implemented method from an abstract class
+                        passed_s = round((time.perf_counter() - t1), 9)
                         if self.record_flag:
-                            # passed_ms = int(round(1000.0*(time.perf_counter() - t1), 0))  # measured time for single acquisition
+                            # passed_ms = int(round(1000.0*(time.perf_counter() - t1), 0))  # measured time inms for single acquisition
                             timestamp_str = datetime.fromtimestamp(time.time()).strftime('%H:%M:%S.%f')[:-3]
                             # print("Passed ms:", passed_ms, flush=True)
                             # print("Timestamp: ", timestamp_str, flush=True)
-                            pil_img = Image.fromarray(image)
-                            draw_handle = ImageDraw.Draw(pil_img)
-                            font = ImageFont.truetype(font='arial.ttf', size=20)
-                            position = (25, 25)  # (x, y)
+                            pil_img = Image.fromarray(image)  # conversion numpy array to PIL image
+                            draw_handle = ImageDraw.Draw(pil_img)  # draw handle for put text
+                            font = ImageFont.truetype(font='arial.ttf', size=20)  # embedded fonts
+                            position = (25, 25)  # (x, y) position of writing
                             draw_handle.text(position, timestamp_str, fill=0, font=font)  # Add black text to a gray image
-                            image = np.array(pil_img)
+                            image = np.array(pil_img)  # conversion PIL image to np.ndarray
+                            if not self.images2record.full():
+                                self.images2record.put_nowait(image)
+                        else:
+                            if not self.exp_time_changed and passed_s > 0.0:
+                                if self.fps is None:
+                                    self.fps = int(round(1.0/passed_s, 0))
+                                else:
+                                    self.fps = int(round(0.5*(self.fps + round(1.0/passed_s, 0)), 0))
+                                    # print("Measured FPS:", self.fps, flush=True)
                         # print("Received image shape in Camera class:", image.shape, flush=True)
                         if image is not None:
                             self.data_queue.put_nowait(image)
@@ -161,9 +176,20 @@ class CameraWrapper(Process):
                         self.trigger_data.set()  # set the trigger that the data is available
                     elif command == "Start Recording":
                         self.record_flag = True
+                        self.images2record = thQueue(maxsize=20)
+                        self.record_thread = Thread(target=self.record); self.record_thread.start()
                         print("Start recording", flush=True)
                     elif command == "Stop Recording":
-                        self.record_flag = False
+                        self.record_flag = False; time.sleep(2.5*self.sleep_time_actions_ms)
+                        if self.record_thread.is_alive():
+                            self.record_thread.join(timeout=0.2)
+                        if not self.images2record.empty():
+                            while not self.images2record.empty():
+                                try:
+                                    self.images2record.get_nowait()
+                                except Empty:
+                                    break
+                        del self.images2record; self.images2record = None
                         print("Stop recording", flush=True)
                     elif command == "Stop" or command == "Quit":
                         self.close()  # close the camera wrapper
@@ -178,6 +204,35 @@ class CameraWrapper(Process):
                 self.trigger_data.set(); self.initialized = False
 
     # %% Record method (can be moved in an additional Process isntead of Thread)
+    def record(self):
+        print("Start recording Thread", flush=True)
+        if self.video_file_path is None:
+            timestamp = datetime.fromtimestamp(time.time()).strftime("%Y-%m-%d_%H-%M-%S")
+            self.video_file_path = str(self.script_path.joinpath("test_video_" + timestamp + ".mov"))
+        first_step = True  # flag to create the video file handler
+        while self.record_flag:
+            if self.images2record is not None and not self.images2record.empty():
+                image2record = self.images2record.get_nowait()
+                # print("Get for recording an image:", image2record.shape, flush=True)
+                if first_step:  # prepare video file to write in
+                    h, w = image2record.shape
+                    self.cv2_codec = cv2.VideoWriter_fourcc(*'jpeg')  # 'mp4v', 'jpeg' for .mov file
+                    # self.cv2_codec = cv2.VideoWriter_fourcc(*'MJPG')  # for .avi file: xvid, mp4, mjpg
+                    # HINT: VideoWriter not supporting gray-scaled images, convert it before:
+                    image2record = cv2.cvtColor(image2record, cv2.COLOR_GRAY2BGR)
+                    self.video_writer = cv2.VideoWriter(self.video_file_path, self.cv2_codec,
+                                                        self.fps, (w, h))
+                    self.video_writer.write(image2record)
+                    first_step = False
+                else:
+                    image2record = cv2.cvtColor(image2record, cv2.COLOR_GRAY2BGR)
+                    self.video_writer.write(image2record)
+            else:
+                time.sleep(self.sleep_time_actions_ms)
+        if not self.record_flag:
+            self.video_writer.release()  # close a file
+            self.video_file_path = None  # back to a default value
+            print("Stop recording Thread", flush=True)
 
     # %% Utility methods
     def close(self):

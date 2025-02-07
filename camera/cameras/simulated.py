@@ -61,7 +61,7 @@ class SimulatedCamera(AbstractCamera):
             2D matrix as the image.
 
         """
-        time.sleep(21/1000)  # short exposure time
+        time.sleep(24/1000)  # short exposure time
         return np.random.randint(0, high=255, size=(480, 640), dtype='uint8')
 
     def close(self):

@@ -111,7 +111,8 @@ class MainCtrlUI(Frame):
         self.buttons_frame = Frame(master=self)  # for placing all buttons in it
         self.bg_color = '#52514f'  # some custom dark background color for label and selectable type of the camera
         self.widgets_styles = Style()   # the single class is enough for configuration of different widget names
-        self.camera_sel_frame_style_n = 'Custom1.TFrame'; self.widgets_styles.configure(self.camera_sel_frame_style_n, background=self.bg_color)
+        self.camera_sel_frame_style_n = 'Custom1.TFrame'
+        self.widgets_styles.configure(self.camera_sel_frame_style_n, background=self.bg_color)
         self.camera_selector_frame = ttkFrame(master=self.buttons_frame, style=self.camera_sel_frame_style_n)
         self.camera_label_style_name = 'Custom1.TLabel'; self.widgets_styles.configure(self.camera_label_style_name,
                                                                                        foreground='white', background=self.bg_color)
@@ -280,12 +281,18 @@ class MainCtrlUI(Frame):
             if self.snaps_stream_flag and self.snaps_stream_task is not None:
                 self.after_cancel(self.snaps_stream_task)  # make a pause in the live stream
             self.commands2camera.put_nowait("Start Recording"); time.sleep(self.sleep_time_actions_ms//2); self.trigger_commands.set()
+            time.sleep(self.sleep_time_actions_ms//2)
             self.record_stream_btn.configure(style=self.record_stream_off_btn_style_name, text=self.record_stream_off_text)
             if self.snaps_stream_flag:
                 self.snaps_stream_task = self.after(1, self.run_snap_stream)  # resume the live stream
         else:
+            if self.snaps_stream_flag and self.snaps_stream_task is not None:
+                self.after_cancel(self.snaps_stream_task)  # make a pause in the live stream
             self.commands2camera.put_nowait("Stop Recording"); time.sleep(self.sleep_time_actions_ms//2); self.trigger_commands.set()
+            time.sleep(self.sleep_time_actions_ms//2)
             self.record_stream_btn.configure(style=self.record_stream_on_btn_style_name, text=self.record_stream_on_text)
+            if self.snaps_stream_flag:
+                self.snaps_stream_task = self.after(1, self.run_snap_stream)  # resume the live stream
 
     # %% Show acquired image
     def show_image(self):
