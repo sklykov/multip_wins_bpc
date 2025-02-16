@@ -136,75 +136,103 @@ class CameraWrapper(Process):
         while self.initialized and self.camera_initialized:
             self.trigger_commands.wait()  # wait for the externally set (by the main script) trigger
             if self.trigger_commands.is_set():
-                self.trigger_commands.clear()
+                self.trigger_commands.clear()  # return trigger to a default value (False)
             # Getting the commands from the queue
             if not self.commands_queue.empty():
                 try:
                     command = self.commands_queue.get_nowait()  # Handling the commands from the main script
                     # print("Camera received a command:", command)
-                    # Snap single image
-                    if command == "Snap" or command == "Snap Image":
-                        t1 = time.perf_counter()  # will be used for setting FPS setting
-                        image = self.camera_ref.snap_image()  # calling the implemented method from an abstract class
-                        passed_s = round((time.perf_counter() - t1), 9)
-                        if self.record_flag:
-                            # passed_ms = int(round(1000.0*(time.perf_counter() - t1), 0))  # measured time inms for single acquisition
-                            timestamp_str = datetime.fromtimestamp(time.time()).strftime('%H:%M:%S.%f')[:-3]
-                            # print("Passed ms:", passed_ms, flush=True)
-                            # print("Timestamp: ", timestamp_str, flush=True)
-                            pil_img = Image.fromarray(image)  # conversion numpy array to PIL image
-                            draw_handle = ImageDraw.Draw(pil_img)  # draw handle for put text
-                            font = ImageFont.truetype(font='arial.ttf', size=20)  # embedded fonts
-                            position = (25, 25)  # (x, y) position of writing
-                            draw_handle.text(position, timestamp_str, fill=0, font=font)  # Add black text to a gray image
-                            image = np.array(pil_img)  # conversion PIL image to np.ndarray
-                            if not self.images2record.full():
-                                self.images2record.put_nowait(image)
-                        else:
-                            if not self.exp_time_changed and passed_s > 0.0:
-                                if self.fps is None:
-                                    self.fps = int(round(1.0/passed_s, 0))
-                                else:
-                                    self.fps = int(round(0.5*(self.fps + round(1.0/passed_s, 0)), 0))
+                    if isinstance(command, str):  # command provided as a simple string
+                        # Snap single image
+                        if command == "Snap" or command == "Snap Image":
+                            t1 = time.perf_counter()  # will be used for setting FPS setting
+                            image = self.camera_ref.snap_image()  # calling the implemented method from an abstract class
+                            passed_s = round((time.perf_counter() - t1), 9)
+                            if self.record_flag:
+                                # passed_ms = int(round(1000.0*(time.perf_counter() - t1), 0))  # measured time inms for single acquisition
+                                timestamp_str = datetime.fromtimestamp(time.time()).strftime('%H:%M:%S.%f')[:-3]
+                                # print("Passed ms:", passed_ms, flush=True)
+                                # print("Timestamp: ", timestamp_str, flush=True)
+                                pil_img = Image.fromarray(image)  # conversion numpy array to PIL image
+                                draw_handle = ImageDraw.Draw(pil_img)  # draw handle for put text
+                                font = ImageFont.truetype(font='arial.ttf', size=20)  # embedded fonts
+                                position = (25, 25)  # (x, y) position of writing
+                                draw_handle.text(position, timestamp_str, fill=0, font=font)  # Add black text to a gray image
+                                image = np.array(pil_img)  # conversion PIL image to np.ndarray
+                                if not self.images2record.full():
+                                    self.images2record.put_nowait(image)
+                            else:
+                                if not self.exp_time_changed and passed_s > 0.0:
+                                    if self.fps is None:
+                                        self.fps = int(round(1.0/passed_s, 0))
+                                    else:
+                                        self.fps = int(round(0.5*(self.fps + round(1.0/passed_s, 0)), 0))
                                     # print("Measured FPS:", self.fps, flush=True)
-                        # print("Received image shape in Camera class:", image.shape, flush=True)
-                        if image is not None:
-                            self.data_queue.put_nowait(image)
-                            # print("Camera sent image on Queue", flush=True)
-                        else:
-                            self.data_queue.put_nowait("String placeholder Image")
-                        self.trigger_data.set()  # set the trigger that the data is available
-                    elif command == "Start Recording":
-                        self.record_flag = True
-                        self.images2record = thQueue(maxsize=20)
-                        self.record_thread = Thread(target=self.record); self.record_thread.start()
-                        print("Start recording", flush=True)
-                    elif command == "Stop Recording":
-                        self.record_flag = False; time.sleep(2.5*self.sleep_time_actions_ms)
-                        if self.record_thread.is_alive():
-                            self.record_thread.join(timeout=0.2)
-                        if not self.images2record.empty():
-                            while not self.images2record.empty():
-                                try:
-                                    self.images2record.get_nowait()
-                                except Empty:
-                                    break
-                        del self.images2record; self.images2record = None
-                        print("Stop recording", flush=True)
-                    elif command == "Stop" or command == "Quit":
-                        self.close()  # close the camera wrapper
-                        self.initialized = False  # set the flag for the loop to stop it
-                        self.data_queue.put_nowait("Stopped"); time.sleep(self.sleep_time_actions_ms); self.trigger_data.set()
+                                elif self.exp_time_changed:  # acknowledge changed exposure time
+                                    self.fps = None; self.exp_time_changed = False
+                            # print("Received image shape in Camera class:", image.shape, flush=True)
+                            if image is not None:
+                                self.data_queue.put_nowait(image)
+                                # print("Camera sent image on Queue", flush=True)
+                            else:
+                                self.data_queue.put_nowait("String placeholder Image")
+                            self.trigger_data.set()  # set the trigger that the data is available
+                        elif command == "Start Recording":
+                            self.record_flag = True
+                            self.images2record = thQueue(maxsize=20)
+                            self.record_thread = Thread(target=self.record); self.record_thread.start()
+                            print("Start recording", flush=True)
+                        elif command == "Stop Recording":
+                            self.record_flag = False; time.sleep(2.5*self.sleep_time_actions_ms)
+                            if self.record_thread.is_alive():
+                                self.record_thread.join(timeout=0.2)
+                            if not self.images2record.empty():
+                                while not self.images2record.empty():
+                                    try:
+                                        self.images2record.get_nowait()
+                                    except Empty:
+                                        break
+                            del self.images2record; self.images2record = None
+                            print("Stop recording", flush=True)
+                        elif command == "Stop" or command == "Quit":
+                            self.close()  # close the camera wrapper
+                            self.initialized = False  # set the flag for the loop to stop it
+                            self.data_queue.put_nowait("Stopped"); time.sleep(self.sleep_time_actions_ms); self.trigger_data.set()
+                    # Commands with parameters
+                    elif isinstance(command, tuple):
+                        (command_str, parameters) = command  # unpacking tuple
+                        # Set exposure time
+                        if command_str == "Set Exposure Time":
+                            exp_time_set = self.camera_ref.set_exp_time(int(parameters))
+                            if exp_time_set:
+                                exp_time = self.camera_ref.get_exp_time()
+                                self.exp_time_changed = True
+                                if isinstance(exp_time, int):
+                                    self.data_queue.put_nowait(exp_time); time.sleep(self.sleep_time_actions_ms); self.trigger_data.set()
+                            else:
+                                self.data_queue.put_nowait("Exposure Time NOT SET"); time.sleep(self.sleep_time_actions_ms)
+                                self.trigger_data.set()
+                    # Some reporting of not recognized commands
+                    else:
+                        print("Camera received NOT RECOGNIZED command:", command, flush=True)
                 # Handling exceptions by the getting the commands from the queue
                 except (Empty, Full):
                     self.data_queue.put_nowait(Exception("Queue with commands or empty, either full. The CameraWrapper Process stopped"))
                     self.trigger_data.set(); self.initialized = False
             else:
-                self.data_queue.put_nowait(Exception("Await to receive the command, by the Queue with commands is empty"))
+                self.data_queue.put_nowait(Exception("Await to receive the command, but the Queue with commands is empty"))
                 self.trigger_data.set(); self.initialized = False
 
     # %% Record method (can be moved in an additional Process isntead of Thread)
     def record(self):
+        """
+        Start record of snaps stream in video with ".mov" format.
+
+        Returns
+        -------
+        None.
+
+        """
         print("Start recording Thread", flush=True)
         if self.video_file_path is None:
             timestamp = datetime.fromtimestamp(time.time()).strftime("%Y-%m-%d_%H-%M-%S")

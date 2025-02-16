@@ -126,7 +126,7 @@ class AdjustSizesWin(Toplevel):
                        (self.text_font_size_sel, self.text_font_size_sel_wr), (self.entry_font_size_sel, self.entry_font_size_sel_wr),
                        (self.menu_font_size_sel, self.menu_font_size_sel_wr)]
         for classes_tuple in self.inputs:
-            spinbox_button, _ = classes_tuple; spinbox_button.bind('<Return>', self.spinbox_input_enter)  # bind <Return> event for all Spinboxes
+            spinbox_button, _ = classes_tuple; spinbox_button.bind('<Return>', self.spinbox_input_enter)  # bind <Return> for Spinbox
             spinbox_button.bind('<FocusOut>', self.spinbox_input_enter)  # bind <FocusOut> event for all Spinboxes
 
         # Placing buttons on the Toplevel window in the single column
