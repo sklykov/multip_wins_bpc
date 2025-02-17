@@ -43,6 +43,7 @@ class CameraWrapper(Process):
     data_queue: Queue; trigger_data: Event; lifo_queues = None; supported_cameras: list = []
     data_triggered_queues = None; queues_triggers = None; camera_supported: bool = False
     camera_initialized: bool = False  # flag for explicit recognition that the camera is initialized (opened)
+    gray_scaled_img: bool = False  # flag for designating type of acquired image on a camera
 
     def __init__(self, camera_type: str, commands2camera: Queue, trigger_commands: Event, data_camera: Queue, trigger_data_camera: Queue,
                  data_triggered_queues: Sequence[Queue] = None, queues_triggers: Sequence[Event] = None, lifo_queues: Sequence[Queue] = None):
@@ -136,8 +137,8 @@ class CameraWrapper(Process):
         while self.initialized and self.camera_initialized:
             self.trigger_commands.wait()  # wait for the externally set (by the main script) trigger
             if self.trigger_commands.is_set():
-                self.trigger_commands.clear()  # return trigger to a default value (False)
-            # Getting the commands from the queue
+                self.trigger_commands.clear()  # return trigger, which starts logic below, to a default value (False)
+            # Getting the commands from a queue
             if not self.commands_queue.empty():
                 try:
                     command = self.commands_queue.get_nowait()  # Handling the commands from the main script
@@ -155,7 +156,7 @@ class CameraWrapper(Process):
                                 # print("Timestamp: ", timestamp_str, flush=True)
                                 pil_img = Image.fromarray(image)  # conversion numpy array to PIL image
                                 draw_handle = ImageDraw.Draw(pil_img)  # draw handle for put text
-                                font = ImageFont.truetype(font='arial.ttf', size=20)  # embedded fonts
+                                font = ImageFont.truetype(font='arial.ttf', size=22)  # embedded fonts
                                 position = (25, 25)  # (x, y) position of writing
                                 draw_handle.text(position, timestamp_str, fill=0, font=font)  # Add black text to a gray image
                                 image = np.array(pil_img)  # conversion PIL image to np.ndarray
@@ -164,9 +165,9 @@ class CameraWrapper(Process):
                             else:
                                 if not self.exp_time_changed and passed_s > 0.0:
                                     if self.fps is None:
-                                        self.fps = int(round(1.0/passed_s, 0))
+                                        self.fps = int(round(1.0/passed_s, 0))  # first estimation of FPS
                                     else:
-                                        self.fps = int(round(0.5*(self.fps + round(1.0/passed_s, 0)), 0))
+                                        self.fps = int(round(0.5*(self.fps + round(1.0/passed_s, 0)), 0))  # averaging of estimated FPS
                                     # print("Measured FPS:", self.fps, flush=True)
                                 elif self.exp_time_changed:  # acknowledge changed exposure time
                                     self.fps = None; self.exp_time_changed = False
@@ -176,7 +177,7 @@ class CameraWrapper(Process):
                                 # print("Camera sent image on Queue", flush=True)
                             else:
                                 self.data_queue.put_nowait("String placeholder Image")
-                            self.trigger_data.set()  # set the trigger that the data is available
+                            self.trigger_data.set()  # set the trigger that the data is available for the calling main module
                         elif command == "Start Recording":
                             self.record_flag = True
                             self.images2record = thQueue(maxsize=20)
@@ -194,6 +195,12 @@ class CameraWrapper(Process):
                                         break
                             del self.images2record; self.images2record = None
                             print("Stop recording", flush=True)
+                        elif command == "Get FPS":
+                            if self.fps is not None:
+                                self.data_queue.put_nowait(self.fps)
+                            else:
+                                self.data_queue.put_nowait(0)  # default value if FPS not measured
+                            self.trigger_data.set()  # set the trigger that the data is available for the calling main module
                         elif command == "Stop" or command == "Quit":
                             self.close()  # close the camera wrapper
                             self.initialized = False  # set the flag for the loop to stop it
@@ -243,17 +250,24 @@ class CameraWrapper(Process):
                 image2record = self.images2record.get_nowait()
                 # print("Get for recording an image:", image2record.shape, flush=True)
                 if first_step:  # prepare video file to write in
-                    h, w = image2record.shape
                     self.cv2_codec = cv2.VideoWriter_fourcc(*'jpeg')  # 'mp4v', 'jpeg' for .mov file
-                    # self.cv2_codec = cv2.VideoWriter_fourcc(*'MJPG')  # for .avi file: xvid, mp4, mjpg
-                    # HINT: VideoWriter not supporting gray-scaled images, convert it before:
-                    image2record = cv2.cvtColor(image2record, cv2.COLOR_GRAY2BGR)
+                    # self.cv2_codec = cv2.VideoWriter_fourcc(*'MJPG')  # for .avi file: xvid, mp4, mj
+                    img_shape_len = len(image2record.shape)  # length of image shape, assuming 2 for grayscaled image, 3 - for RGB (BGR)
+                    if img_shape_len == 2:
+                        h, w = image2record.shape
+                        # HINT: VideoWriter not supporting gray-scaled images, convert it before
+                        image2record = cv2.cvtColor(image2record, cv2.COLOR_GRAY2BGR)
+                        self.gray_scaled_img = True  # for designating of acquired image type
+                    elif img_shape_len == 3:
+                        h, w, _ = image2record.shape
+                        self.gray_scaled_img = False
                     self.video_writer = cv2.VideoWriter(self.video_file_path, self.cv2_codec,
                                                         self.fps, (w, h))
                     self.video_writer.write(image2record)
                     first_step = False
                 else:
-                    image2record = cv2.cvtColor(image2record, cv2.COLOR_GRAY2BGR)
+                    if self.gray_scaled_img:
+                        image2record = cv2.cvtColor(image2record, cv2.COLOR_GRAY2BGR)  # conversion from grayscale image to BGR format
                     self.video_writer.write(image2record)
             else:
                 time.sleep(self.sleep_time_actions_ms)

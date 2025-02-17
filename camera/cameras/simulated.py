@@ -9,6 +9,7 @@ Camera abstract class.
 import time
 import numpy as np
 from pathlib import Path
+import random
 
 # %% Local imports
 if __name__ == "__main__" or __name__ == Path(__file__).stem or __name__ == "__mp_main__":
@@ -62,7 +63,8 @@ class SimulatedCamera(AbstractCamera):
             2D matrix as the image.
 
         """
-        time.sleep((self.exp_t_ms + 2)/1000)  # wait for an exposure time + some overhead
+        exp_time_offset = random.randint(0, 3)  # random selection of integer offset
+        time.sleep((self.exp_t_ms + exp_time_offset)/1000)  # wait for an exposure time + some overhead
         return np.random.randint(0, high=255, size=(480, 640), dtype='uint8')
 
     def set_exp_time(self, exp_t_ms: int) -> bool:

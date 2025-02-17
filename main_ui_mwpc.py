@@ -167,6 +167,10 @@ class MainCtrlUI(Frame):
         self.exp_time_selector.pack(side=LEFT, padx=self.padx//2, pady=self.pady//2)
         self.exp_time_selector.bind('<Return>', self.set_exp_time); self.exp_time_selector.bind('<FocusOut>', self.set_exp_time)
 
+        # FPS indicator reported after acquisition
+        self.acquired_images = 0; self.fps = 0  # variables
+        self.fps_label = Label(master=self.buttons_frame, text=f"Measured FPS: {self.fps}")  # label for showing measured FPS
+
         # Placing GUI elements in the container (Frame) which in turn is placed below along with the plot_widget
         self.camera_selector_frame.pack(side=TOP, padx=self.padx, pady=self.pady//2)
         self.camera_status_label.pack(side=TOP, padx=self.padx, pady=self.pady)
@@ -174,6 +178,7 @@ class MainCtrlUI(Frame):
         self.snap_stream_btn.pack(side=TOP, padx=self.padx, pady=self.pady)
         self.record_stream_btn.pack(side=TOP, padx=self.padx, pady=self.pady)
         self.exp_time_sel_frame.pack(side=TOP, padx=self.padx, pady=self.pady)
+        self.fps_label.pack(side=TOP, padx=self.padx, pady=self.pady)
 
         # Pack plot widget with the image and Frame with buttons (grid layout removed)
         self.plot_widget.pack(side=LEFT, padx=self.padx, pady=self.pady)  # The biggest GUI element - image widget
@@ -229,6 +234,13 @@ class MainCtrlUI(Frame):
                 received_data = self.data_from_camera.get_nowait()
                 if isinstance(received_data, np.ndarray):
                     self.current_image = received_data; self.snap_image_obtained = True; self.display_image = True
+                    # Check # of acquired images for retrieving measured FPS
+                    self.acquired_images += 1   # count number of acquired images
+                    if self.acquired_images > 10_000_001:  # auto reset large accumulated # of images
+                        self.acquired_images = 1
+                    if not self.record_flag:
+                        if self.acquired_images == 3 or self.acquired_images % 50 == 0:  # query measured FPS (3 images or after 50 acquired)
+                            self.after(4, self.query_fps)
                     self.after(2, self.show_image)  # schedule asynchronous call to show an image
                 else:
                     print("Received from the camera:", received_data, flush=True)
@@ -340,6 +352,8 @@ class MainCtrlUI(Frame):
             trigger_set = self.trigger_camera_data.wait(timeout=5.5); time.sleep(self.sleep_time_actions_ms/1.5)
             if trigger_set:
                 self.trigger_camera_data.clear()  # set to the default state
+                self.acquired_images = 0  # reset # of acquired images
+                self.fps = 0; self.fps_label.config(text=f"Measured FPS: {self.fps}")  # update FPS label
                 try:
                     received_data = self.data_from_camera.get_nowait()
                     if isinstance(received_data, int):  # reported assigned exposure time
@@ -351,6 +365,35 @@ class MainCtrlUI(Frame):
             else:
                 print("Something wrong with Set Exposure Time, the TIMEOUT happened in a trigger wait function", flush=True)
         self.focus()
+
+    def query_fps(self):
+        """
+        Get the measured FPS from a camera wrapper.
+
+        Returns
+        -------
+        None.
+
+        """
+        self.commands2camera.put_nowait("Get FPS"); time.sleep(self.sleep_time_actions_ms/1.65); self.trigger_commands.set()
+        trigger_set = self.trigger_camera_data.wait(timeout=5.0); time.sleep(self.sleep_time_actions_ms/1.65)
+        # Dev. Note: pausing by time.sleep() makes the snaps stream mode stable
+        if trigger_set:
+            self.trigger_camera_data.clear()  # set to the default state
+            try:
+                received_data = self.data_from_camera.get_nowait()
+                if isinstance(received_data, int):
+                    self.fps = received_data  # store received FPS
+                    self.fps_label.config(text=f"Measured FPS: {self.fps}")  # update FPS label
+                else:
+                    print("Received from the camera (not integer FPS):", received_data, flush=True)
+            except Empty:
+                print("No integer FPS received from Queue, but the trigger is set", flush=True)
+                self.fps = 0; self.fps_label.config(text=f"Measured FPS: {self.fps}")
+        else:
+            print("Something wrong with the Query FPS logic, the TIMEOUT happened in a trigger wait function", flush=True)
+            self.fps = 0; self.fps_label.config(text=f"Measured FPS: {self.fps}")
+        self.update()
 
     # %% Show acquired image
     def show_image(self):
