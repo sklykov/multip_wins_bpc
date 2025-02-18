@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Camera abstract class.
+Simulated (for images generation only containing noise) camera class.
 
 @author: sklykov, @license: MIT license
 
@@ -26,7 +26,7 @@ class SimulatedCamera(AbstractCamera):
     """Simulated camera with the noise simulation."""
 
     def __init__(self):
-        self.exp_t_ms = 25
+        self.exp_t_ms = 50
         print("Simulated Camera class initialized", flush=True); time.sleep(self.exp_t_ms/1000)
 
     def camera_type() -> str:

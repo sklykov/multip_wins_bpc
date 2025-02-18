@@ -30,6 +30,8 @@ cameras_cls_names = [camera_class for camera_class in local_modules.keys() if "C
 cameras_ctrl_classes = [local_modules[camera_name] for camera_name in cameras_cls_names]
 cameras_ctrl_types = [ctrl_class.camera_type() for ctrl_class in cameras_ctrl_classes]
 
+# %% TODO: FPS counted not right
+
 
 # %% Camera class
 class CameraWrapper(Process):
@@ -97,6 +99,7 @@ class CameraWrapper(Process):
                 self.lifo_queues = lifo_queues
         # Check that the camera type is supported (could be duplicated from the main script)
         self.supported_cameras = cameras_ctrl_types  # can be checked / loaded from the configuration
+        print("Supported cameras:", cameras_ctrl_types, flush=True)
         if camera_type in self.supported_cameras:
             self.camera_type = camera_type; self.camera_supported = True
         # Checking provided parameters to be consistent and empty
@@ -123,8 +126,9 @@ class CameraWrapper(Process):
         """
         # Starting the Process loop. The camera connection should be initialized here.
         if self.initialized:
-            if self.camera_type == self.supported_cameras[0]:  # automatic discovery of the imported classes
-                self.camera_ref = cameras_ctrl_classes[0]()  # initialize the camera controlling class
+            if self.camera_type in self.supported_cameras:  # automatic discovery of the imported classes
+                camera_index = self.supported_cameras.index(self.camera_type)
+                self.camera_ref = cameras_ctrl_classes[camera_index]()  # initialize the camera controlling class
                 self.camera_initialized = self.camera_ref.initialize()  # explicit initialization method
                 # self.camera_initialized = True  # placeholder for the initialization of the camera
                 # Dev Note about putting time.sleep() below - if the scripts launched in Python debugger by Visual Studio Code
@@ -261,6 +265,7 @@ class CameraWrapper(Process):
                     elif img_shape_len == 3:
                         h, w, _ = image2record.shape
                         self.gray_scaled_img = False
+                        image2record = cv2.cvtColor(image2record, cv2.COLOR_RGB2BGR)  # required back conversion for pyopencv
                     self.video_writer = cv2.VideoWriter(self.video_file_path, self.cv2_codec,
                                                         self.fps, (w, h))
                     self.video_writer.write(image2record)
@@ -268,7 +273,8 @@ class CameraWrapper(Process):
                 else:
                     if self.gray_scaled_img:
                         image2record = cv2.cvtColor(image2record, cv2.COLOR_GRAY2BGR)  # conversion from grayscale image to BGR format
-                    self.video_writer.write(image2record)
+                    image2record = cv2.cvtColor(image2record, cv2.COLOR_RGB2BGR)  # required back conversion for pyopencv
+                    self.video_writer.write(image2record)  # write a frame
             else:
                 time.sleep(self.sleep_time_actions_ms)
         if not self.record_flag:
