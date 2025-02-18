@@ -110,6 +110,7 @@ class MainCtrlUI(Frame):
         # Program parameters, variables
         self.snaps_stream_flag = False; self.snaps_stream_task = None; self.record_flag = False
         self.retain_resizable_flag = False; self.show_image_task = None; self.fast_fps_overhead = 0
+        self.fps_snaps_stream = 0
 
         # Select the camera from the list
         self.buttons_frame = Frame(master=self)  # for placing all buttons in it
@@ -240,6 +241,8 @@ class MainCtrlUI(Frame):
         None.
 
         """
+        if self.snaps_stream_flag and not self.record_flag:  # estimation of FPS for snaps stream should be performed in the main UI
+            t1 = time.perf_counter()  # will be used for setting FPS setting
         self.commands2camera.put_nowait("Snap"); time.sleep(self.sleep_time_actions_ms/1.5); self.trigger_commands.set()
         trigger_set = self.trigger_camera_data.wait(timeout=5.0); time.sleep(self.sleep_time_actions_ms/1.5)
         # Dev. Note: pausing by time.sleep() makes the snaps stream mode stable
@@ -253,9 +256,27 @@ class MainCtrlUI(Frame):
                     self.acquired_images += 1   # count number of acquired images
                     if self.acquired_images > 10_000_001:  # auto reset large accumulated # of images
                         self.acquired_images = 1
-                    if not self.record_flag:
-                        if self.acquired_images == 3 or self.acquired_images % 50 == 0:  # query measured FPS (3 images or after 50 acquired)
-                            self.after(9 + self.fast_fps_overhead, self.query_fps)
+                    # if not self.record_flag and not self.snaps_stream_flag:
+                    #     if self.acquired_images == 3 or self.acquired_images % 50 == 0:  # query measured FPS (3 images or after 50 acquired)
+                    #         self.after(9 + self.fast_fps_overhead, self.query_fps)
+                    if self.snaps_stream_flag and not self.record_flag:
+                        passed_s = round((time.perf_counter() - t1), 9)
+                        if self.fps == 0:
+                            self.fps = int(round(1.0/passed_s, 0))  # first estimation of FPS
+                            self.fps_label.config(text=f"Measured FPS: {self.fps}")  # 1st estimation
+                        else:
+                            self.fps = int(round(0.5*(self.fps + round(1.0/passed_s, 0)), 0))  # averaging of estimated FPS
+                        if self.acquired_images % 5 == 0:  # update FPS each 5 fresh images
+                            self.fps_label.config(text=f"Measured FPS: {self.fps}")
+                        # Adjust overhead for showing image query
+                        if self.fps > 20:
+                            self.fast_fps_overhead = 1
+                        if self.fps > 50:
+                            self.fast_fps_overhead = 2
+                        elif self.fps > 75:
+                            self.fast_fps_overhead = 3
+                        elif self.fps > 100:
+                            self.fast_fps_overhead = 4
                     # schedule asynchronous call to show an image with some delays for making GUI more stable
                     self.show_image_task = self.after(7 + self.fast_fps_overhead, self.show_image)
                 else:
@@ -385,7 +406,8 @@ class MainCtrlUI(Frame):
             if trigger_set:
                 self.trigger_camera_data.clear()  # set to the default state
                 self.acquired_images = 0  # reset # of acquired images
-                self.fps = 0; self.fps_label.config(text=f"Measured FPS: {self.fps}")  # update FPS label
+                self.fps = 0
+                # self.fps_label.config(text=f"Measured FPS: {self.fps}")  # update FPS label
                 try:
                     received_data = self.data_from_camera.get_nowait()
                     if isinstance(received_data, int):  # reported assigned exposure time
@@ -417,14 +439,6 @@ class MainCtrlUI(Frame):
                 if isinstance(received_data, int):
                     self.fps = received_data  # store received FPS
                     self.fps_label.config(text=f"Measured FPS: {self.fps}")  # update FPS label
-                    if self.fps > 20:
-                        self.fast_fps_overhead = 1
-                    if self.fps > 50:
-                        self.fast_fps_overhead = 2
-                    elif self.fps > 75:
-                        self.fast_fps_overhead = 3
-                    elif self.fps > 100:
-                        self.fast_fps_overhead = 4
                 else:
                     print("Received from the camera (not integer FPS):", received_data, flush=True)
             except Empty:
