@@ -150,9 +150,9 @@ class CameraWrapper(Process):
                     if isinstance(command, str):  # command provided as a simple string
                         # Snap single image
                         if command == "Snap" or command == "Snap Image":
-                            t1 = time.perf_counter()  # will be used for setting FPS setting
+                            # t1 = time.perf_counter()  # will be used for setting FPS setting
                             image = self.camera_ref.snap_image()  # calling the implemented method from an abstract class
-                            passed_s = round((time.perf_counter() - t1), 9)
+                            # passed_s = round((time.perf_counter() - t1), 9)
                             if self.record_flag:
                                 # passed_ms = int(round(1000.0*(time.perf_counter() - t1), 0))  # measured time inms for single acquisition
                                 timestamp_str = datetime.fromtimestamp(time.time()).strftime('%H:%M:%S.%f')[:-3]
@@ -167,14 +167,16 @@ class CameraWrapper(Process):
                                 if not self.images2record.full():
                                     self.images2record.put_nowait(image)
                             else:
-                                if not self.exp_time_changed and passed_s > 0.0:
-                                    if self.fps is None:
-                                        self.fps = int(round(1.0/passed_s, 0))  # first estimation of FPS
-                                    else:
-                                        self.fps = int(round(0.5*(self.fps + round(1.0/passed_s, 0)), 0))  # averaging of estimated FPS
-                                    # print("Measured FPS:", self.fps, flush=True)
-                                elif self.exp_time_changed:  # acknowledge changed exposure time
-                                    self.fps = None; self.exp_time_changed = False
+                                # if not self.exp_time_changed and passed_s > 0.0:
+                                #     if self.fps is None:
+                                #         self.fps = int(round(1.0/passed_s, 0))  # first estimation of FPS
+                                #     else:
+                                #         self.fps = int(round(0.5*(self.fps + round(1.0/passed_s, 0)), 0))  # averaging of estimated FPS
+                                #     # print("Measured FPS:", self.fps, flush=True)
+                                # elif self.exp_time_changed:  # acknowledge changed exposure time
+                                #     self.fps = None; self.exp_time_changed = False
+                                if self.exp_time_changed:
+                                    self.exp_time_changed = False
                             # print("Received image shape in Camera class:", image.shape, flush=True)
                             if image is not None:
                                 self.data_queue.put_nowait(image)
@@ -223,6 +225,9 @@ class CameraWrapper(Process):
                             else:
                                 self.data_queue.put_nowait("Exposure Time NOT SET"); time.sleep(self.sleep_time_actions_ms)
                                 self.trigger_data.set()
+                        # Store measured on the main UI FPS
+                        elif command_str == "Measured FPS":
+                            self.fps = int(parameters)  # set measured FPS
                     # Some reporting of not recognized commands
                     else:
                         print("Camera received NOT RECOGNIZED command:", command, flush=True)

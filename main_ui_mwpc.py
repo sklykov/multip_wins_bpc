@@ -110,7 +110,7 @@ class MainCtrlUI(Frame):
         # Program parameters, variables
         self.snaps_stream_flag = False; self.snaps_stream_task = None; self.record_flag = False
         self.retain_resizable_flag = False; self.show_image_task = None; self.fast_fps_overhead = 0
-        self.fps_snaps_stream = 0
+        self.fps_snaps_stream = 0; self.ring_fps_buffer = np.zeros((5, )); self.index_fps_buffer = 0
 
         # Select the camera from the list
         self.buttons_frame = Frame(master=self)  # for placing all buttons in it
@@ -243,8 +243,8 @@ class MainCtrlUI(Frame):
         """
         if self.snaps_stream_flag and not self.record_flag:  # estimation of FPS for snaps stream should be performed in the main UI
             t1 = time.perf_counter()  # will be used for setting FPS setting
-        self.commands2camera.put_nowait("Snap"); time.sleep(self.sleep_time_actions_ms/1.5); self.trigger_commands.set()
-        trigger_set = self.trigger_camera_data.wait(timeout=5.0); time.sleep(self.sleep_time_actions_ms/1.5)
+        self.commands2camera.put_nowait("Snap"); time.sleep(self.sleep_time_actions_ms/1.6); self.trigger_commands.set()
+        trigger_set = self.trigger_camera_data.wait(timeout=5.0); time.sleep(self.sleep_time_actions_ms/1.6)
         # Dev. Note: pausing by time.sleep() makes the snaps stream mode stable
         if trigger_set:
             self.trigger_camera_data.clear()  # set to the default state
@@ -264,19 +264,33 @@ class MainCtrlUI(Frame):
                         if self.fps == 0:
                             self.fps = int(round(1.0/passed_s, 0))  # first estimation of FPS
                             self.fps_label.config(text=f"Measured FPS: {self.fps}")  # 1st estimation
+                            self.after(5, self.set_fps)  # send measured FPS to a camera ctrl module
+                            self.index_fps_buffer = 0  # set to the default value
+                            self.ring_fps_buffer[self.index_fps_buffer] = self.fps; self.index_fps_buffer += 1
                         else:
-                            self.fps = int(round(0.5*(self.fps + round(1.0/passed_s, 0)), 0))  # averaging of estimated FPS
-                        if self.acquired_images % 5 == 0:  # update FPS each 5 fresh images
+                            # self.fps = int(round(0.5*(self.fps + round(1.0/passed_s, 0)), 0))  # averaging of estimated FPS (not stable)
+                            # below - averaging 5 stored measured FPS for more stable estimation of it
+                            if self.index_fps_buffer < len(self.ring_fps_buffer) - 1:
+                                self.ring_fps_buffer[self.index_fps_buffer] = self.fps; self.index_fps_buffer += 1
+                            elif self.index_fps_buffer == len(self.ring_fps_buffer) - 1:
+                                self.ring_fps_buffer[self.index_fps_buffer] = self.fps
+                                self.fps = int(round((np.mean(self.ring_fps_buffer)), 0)); self.index_fps_buffer = 0
+                        if self.acquired_images % 5 == 0:  # update FPS label each 5 fresh images
                             self.fps_label.config(text=f"Measured FPS: {self.fps}")
+                            self.after(5, self.set_fps)  # send measured FPS to a camera ctrl module
                         # Adjust overhead for showing image query
-                        if self.fps > 20:
+                        if self.fps < 10:
+                            self.fast_fps_overhead = 0
+                        elif self.fps >= 10:
                             self.fast_fps_overhead = 1
-                        if self.fps > 50:
+                        elif self.fps > 20:
                             self.fast_fps_overhead = 2
-                        elif self.fps > 75:
+                        elif self.fps > 50:
                             self.fast_fps_overhead = 3
-                        elif self.fps > 100:
+                        elif self.fps > 75:
                             self.fast_fps_overhead = 4
+                        elif self.fps > 100:
+                            self.fast_fps_overhead = 5
                     # schedule asynchronous call to show an image with some delays for making GUI more stable
                     self.show_image_task = self.after(7 + self.fast_fps_overhead, self.show_image)
                 else:
@@ -448,6 +462,18 @@ class MainCtrlUI(Frame):
             print("Something wrong with the Query FPS logic, the TIMEOUT happened in a trigger wait function", flush=True)
             self.fps = 0; self.fps_label.config(text=f"Measured FPS: {self.fps}")
         self.update()
+
+    def set_fps(self):
+        """
+        Send measured actual FPS for storing it in camera_wrapper module and use it for recording.
+
+        Returns
+        -------
+        None.
+
+        """
+        self.commands2camera.put_nowait(("Measured FPS", self.fps)); time.sleep(self.sleep_time_actions_ms/1.5)
+        self.trigger_commands.set(); time.sleep(self.sleep_time_actions_ms/1.5)
 
     # %% Show acquired image
     def show_image(self):
