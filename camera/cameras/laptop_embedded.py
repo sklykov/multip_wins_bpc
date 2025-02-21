@@ -37,6 +37,7 @@ class EmbeddedLaptopCamera(AbstractCamera):
         self.camera_index = 0  # default camera index
         self.camera_handle = None; self.exp_t_changeable = False
         self.exp_t_ms = 0; self.img_width = 0; self.img_height = 0
+        self.camera_report = ""  # default - empty report (no problems)
 
     def camera_type() -> str:
         """
@@ -71,9 +72,26 @@ class EmbeddedLaptopCamera(AbstractCamera):
                     self.img_width = camera.get(cv2.CAP_PROP_FRAME_WIDTH); self.img_height = camera.get(cv2.CAP_PROP_FRAME_HEIGHT)
                     self.camera_handle = camera; break
             if self.camera_handle is not None and self.camera_handle.isOpened():
+                self.camera_report = ""
                 return True
+            else:
+                self.camera_report = "No available camera has been found, check avaibility of an embedded camera"
+                return False
         else:
+            self.camera_report = "Required library 'pyopencv' not installed"
             return False
+
+    def initialization_status(self) -> str:
+        """
+        Return stored problem report during initialization.
+
+        Returns
+        -------
+        str
+            Stored problem report.
+
+        """
+        return self.camera_report
 
     def snap_image(self) -> np.ndarray:
         """

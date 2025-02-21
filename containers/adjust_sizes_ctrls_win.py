@@ -130,7 +130,8 @@ class AdjustSizesWin(Toplevel):
             spinbox_button.bind('<FocusOut>', self.spinbox_input_enter)  # bind <FocusOut> event for all Spinboxes
 
         # Placing buttons on the Toplevel window in the single column
-        self.resize_switch_btn.pack(side=TOP, padx=self.pad, pady=self.pad); self.height_width_frame.pack(side=TOP, padx=self.pad, pady=self.pad)
+        self.resize_switch_btn.pack(side=TOP, padx=self.pad, pady=self.pad)
+        self.height_width_frame.pack(side=TOP, padx=self.pad, pady=self.pad)
         self.font_sizes_frame.pack(side=TOP, padx=self.pad, pady=self.pad); self.scaling_frame.pack(side=TOP, padx=self.pad, pady=self.pad)
 
         # self.master.after(2000, self.master.relaunch_gui)  # relaunch after

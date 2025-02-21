@@ -53,6 +53,18 @@ class SimulatedCamera(AbstractCamera):
         time.sleep(0.005)
         return True
 
+    def initialization_status(self) -> str:
+        """
+        Return constant string "Initialized".
+
+        Returns
+        -------
+        str
+            "Initialized".
+
+        """
+        return "Initialized"
+
     def snap_image(self) -> np.ndarray:
         """
         Generate random (noisy) picture.

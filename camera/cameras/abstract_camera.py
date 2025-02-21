@@ -32,6 +32,19 @@ class AbstractCamera(ABC):
         pass
 
     @abstractmethod
+    def initialization_status(self) -> str:
+        """
+        Provide problem report after calling initialize() method.
+
+        Returns
+        -------
+        str
+            Camera initialization status.
+
+        """
+        pass
+
+    @abstractmethod
     def close(self):
         """
         Close the connection.

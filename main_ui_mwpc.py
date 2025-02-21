@@ -122,7 +122,7 @@ class MainCtrlUI(Frame):
         self.camera_label_style_name = 'Custom1.TLabel'; self.widgets_styles.configure(self.camera_label_style_name,
                                                                                        foreground='white', background=self.bg_color)
         self.camera_selector_label = Label(master=self.camera_selector_frame, text="Camera: ", style=self.camera_label_style_name)
-        self.supported_cameras = cameras_ctrl_types  # list of the names with the supported cameras (imported from a module)
+        self.supported_cameras = cameras_ctrl_types[:]  # copy of a list with the names with the supported cameras (imported from a module)
         self.supported_cameras.append("Next TBI...")  # add not implemented camera name
         self.selected_camera = StringVar(); self.selected_camera.set(self.supported_cameras[0])
         self.camera_sel_style_name = 'Custom1.TMenubutton'; self.active_camera = self.supported_cameras[0]
@@ -223,9 +223,13 @@ class MainCtrlUI(Frame):
                 self.trigger_camera_data.clear()  # set to the default state
                 if not self.data_from_camera.empty():
                     if self.data_from_camera.get_nowait() == "Initialized":
-                        print(f"{self.selected_camera.get()} Camera Opened"); self.camera_opened = True
+                        print(f"{self.selected_camera.get()} Camera Opened", flush=True); self.camera_opened = True
                         self.camera_status_label.config(text=self.camera_act_text, style=self.camera_init_status_style); self.update()
                         self.snap_stream_btn.configure(state="normal"); self.snap_image_btn.configure(state="normal")
+                    elif self.data_from_camera.get_nowait() == "NOT Initialized":
+                        print(f"{self.selected_camera.get()} Camera Opened", flush=True); self.camera_opened = False
+                        self.camera_status_label.config(text=self.camera_inact_text, style=self.camera_error_status_style)
+                        trigger_set = True  # for stopping the loop
             if not trigger_set or not self.camera_opened:
                 print(f"Trigger from {self.selected_camera.get()} Camera not received")
                 self.camera_status_label.config(text=self.camera_inact_text, style=self.camera_error_status_style)
@@ -557,8 +561,8 @@ class MainCtrlUI(Frame):
             self.exp_time_selector.configure(state="disabled")
             print("Selected camera:", selected_camera)
             self.img_w = None; self.img_h = None  # put image WxH to the default values
-            if not self.check_installed_drivers(selected_camera):
-                print(f"The required drivers for the '{selected_camera}' camera not installed. \nThe previously active camera remained")
+            if not self.check_implementation(selected_camera):
+                print(f"The required implementation for the '{selected_camera}' camera not found. \nThe previously active camera remained")
                 self.selected_camera.set(self.active_camera)  # set back the active camera and open it
             else:
                 self.close_camera()  # closing the currently active camera
@@ -573,9 +577,9 @@ class MainCtrlUI(Frame):
             self.snap_stream_btn.configure(state="normal"); self.snap_image_btn.configure(state="normal")
             self.exp_time_selector.configure(state="normal")
 
-    def check_installed_drivers(self, selected_camera) -> bool:
+    def check_implementation(self, selected_camera) -> bool:
         """
-        Check if the required drivers installed in the current environment.
+        Check if the required implementation in 'ClassCamera' is stored in a subfolder 'camera / cameras' and exported by '__init__.py'.
 
         Parameters
         ----------
@@ -585,22 +589,10 @@ class MainCtrlUI(Frame):
         Returns
         -------
         bool
-            Flag if the required drivers not installed in the current environment.
+            Flag if the required implementation not found.
 
         """
-        if selected_camera == "Simulated":
-            return True  # default assuming that simulated camera is always available as the fallback
-        elif selected_camera == self.supported_cameras[1]:  # should be embedded in a laptop
-            try:
-                import cv2  # minimal requirement - installed pyopencv library
-                if cv2 is not None:
-                    return True
-                else:
-                    return False
-            except ModuleNotFoundError:
-                return False
-        elif selected_camera == self.supported_cameras[2]:  # next camera
-            return False  # implement checking logic for a next camera
+        return selected_camera in cameras_ctrl_types
 
     # %% Utilities
     def clean_queues_events(self):

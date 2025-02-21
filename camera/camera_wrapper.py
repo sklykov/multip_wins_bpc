@@ -30,8 +30,6 @@ cameras_cls_names = [camera_class for camera_class in local_modules.keys() if "C
 cameras_ctrl_classes = [local_modules[camera_name] for camera_name in cameras_cls_names]
 cameras_ctrl_types = [ctrl_class.camera_type() for ctrl_class in cameras_ctrl_classes]
 
-# %% TODO: FPS counted not right
-
 
 # %% Camera class
 class CameraWrapper(Process):
@@ -134,6 +132,10 @@ class CameraWrapper(Process):
                 # Dev Note about putting time.sleep() below - if the scripts launched in Python debugger by Visual Studio Code
                 if self.camera_initialized:
                     self.data_queue.put_nowait("Initialized"); time.sleep(self.sleep_time_actions_ms); self.trigger_data.set()
+                else:
+                    report = self.camera_ref.initialization_status()
+                    self.data_queue.put_nowait("NOT Initialized. Problem report:\n" + report)
+                    time.sleep(self.sleep_time_actions_ms); self.trigger_data.set()
             else:
                 self.initialized = False  # if there is no initialization logic, by default set to False
 
