@@ -10,13 +10,14 @@ Main GUI script - visualization of images stream.
 
 # %% Dev comments
 # Overall note: tkinter isn't good for complex GUI development, planning to switch to another GUI library
+# 1) about 'ttkbootstrap' library:
+#       - it styles ttk widgets, tk ones should be exchanged to analogs from ttk. Has issues with IPython launching;
+#       - conflicts with creation of custom styled components;
+# 2) about 'customtkinter':
+#       - has an issue with resizing of a widget - container for an acquired image;
+#       - requires exchanging all standard widgets to its counterparts;
 
 # %% Global imports
-try:
-    import tkthread; tkthread.patch()  # fix the errors reported after closing the GUI: "RuntimeError: main thread is not in main loop"
-except ModuleNotFoundError:
-    print("Please install 'tkthread' from https://pypi.org/project/tkthread/ for making tkinter thread-safe")
-# Ref. to the package above: https://pypi.org/project/tkthread/  Note that the license is Apache Software License.
 from tkinter import Frame, Menu, Tk, font, LEFT, TOP, BOTH, StringVar, IntVar
 from tkinter.ttk import Button, Style, Label, OptionMenu, Spinbox
 from tkinter.ttk import Frame as ttkFrame
@@ -34,6 +35,33 @@ from multiprocessing import Queue, Event
 from queue import Empty
 import numpy as np
 
+# Make tkinter Thread Safe. Ref. to the package: https://pypi.org/project/tkthread/  Note that the license is Apache Software License.
+try:
+    import tkthread; tkthread.patch()  # fix the errors reported after closing the GUI: "RuntimeError: main thread is not in main loop"
+except ModuleNotFoundError:
+    print("Please install 'tkthread' from https://pypi.org/project/tkthread/ for making tkinter thread-safe")
+
+# Testing prestyled and configured 'ttkbootstrap' library - CHECK and import should be shifted after class declaration due to some
+# issue of importing it and after declaration of ttk Style below in the MainCtrlUI class. Stable fix - delete ttkbootstrap
+
+# Testing flags / parameters
+test_ttkbootstrap = False  # in general, this library should improve styling, but it requires changing of tk widgets to ttk ones
+test_customtkinter = False  # testing 'customtkinter' library
+
+# Testing prestyled and configured 'customtkinter' library
+try:
+    from customtkinter import CTk, CTkFrame
+    customtkinter_installed = True
+except ModuleNotFoundError:
+    customtkinter_installed = False
+
+# Below - main concept in customization of a style by using 'customtkinter' library: all standard widgets should exchanged to
+# the counterparts from it, like base class before: CTkFrame instead of standard Frame class
+if test_customtkinter and customtkinter_installed:
+    base_class = CTkFrame
+else:
+    base_class = Frame
+
 # %% Local imports
 if __name__ == "__main__" or __name__ == Path(__file__).stem or __name__ == "__mp_main__":
     from containers.adjust_sizes_ctrls_win import AdjustSizesWin
@@ -48,11 +76,11 @@ else:
 
 # %% Script-wide parameters
 current_year = datetime.now().strftime('%Y')
-__start_message__ = f"Main Controlling Camera GUI script, {current_year} MIT licensed, GitHub: @sklykov"
+__start_message__ = f"\nMain Controlling Camera GUI script, {current_year} MIT licensed, GitHub: @sklykov\n"
 
 
 # %% GUI based on tkinter.Frame
-class MainCtrlUI(Frame):
+class MainCtrlUI(base_class):
     """GUI based on tkinter.Frame composing all main controls."""
 
     def __init__(self, master, changed_dpi: bool = False):
@@ -726,10 +754,22 @@ class MainCtrlUI(Frame):
 class WrapperMainUI():
     """Wrapper for main GUI Frame."""
 
-    def __init__(self):
+    def __init__(self, test_ttkbootstrap: bool = False, test_customtkinter: bool = False):
         print(__start_message__)
-        WrapperMainUI.fix_blurring()  # fix blurring of UIs
-        self.tk_root = Tk()  # main tkinter class, toplevel window
+        self.custom_tkinter = False  # default flag for testing customtkinter
+        if test_ttkbootstrap:
+            # Print out Note for launching in a IPython console
+            for frame in inspect.stack():
+                if "IPython" in str(frame):
+                    print("\nThe closing operation for ttkbootstrap has an issue on closing in IPython console"); break
+            from ttkbootstrap import Window
+            self.tk_root = Window(themename="solar")
+        elif test_customtkinter:
+            self.tk_root = CTk()
+            self.custom_tkinter = True
+        else:
+            WrapperMainUI.fix_blurring()  # fix blurring of UIs
+            self.tk_root = Tk()  # main tkinter class, toplevel window
 
     def launch(self):
         """
@@ -740,8 +780,13 @@ class WrapperMainUI():
         None.
 
         """
-        self.mainUI = MainCtrlUI(master=self.tk_root); self.mainUI.mainloop()
-        while self.mainUI._relaunch:  # relaunch the main GUI window, if some showing settings changed
+        self.mainUI = MainCtrlUI(master=self.tk_root)  # Frame tkinter class used as the additional container
+        if not self.custom_tkinter:
+            self.mainUI.mainloop()
+        else:
+            self.tk_root.mainloop()
+        # Relaunching root if rescaling method called
+        while self.mainUI._relaunch and not ttkbootstrap_installed:  # relaunch the main GUI window, if some showing settings changed
             dpi_changed = self.mainUI._changed_dpi
             self.tk_root = Tk()  # reinitialize main GUI class
             # initialize again GUI based on Frame()
@@ -766,8 +811,21 @@ class WrapperMainUI():
 
 # %% Testing
 if __name__ == "__main__":
+    # Checking if the script is launched in IPython console (Spyder IDE default console)
     for frame in inspect.stack():
         if "IPython" in str(frame):
-            print("NOTE: most probably, this script has been launched in IPython, there it has sometimes the issue with relaunching "
+            print("\nNOTE: most probably, this script has been launched in IPython, there it has sometimes the issue with relaunching "
                   + "after using of the adjusting window"); break
-    ctrl_cls = WrapperMainUI(); ctrl_cls.launch()
+    # Shifted check if the ttkbootstrap was installede
+    ttkbootstrap_installed = False
+    if test_ttkbootstrap:  # quick fix for not stably appearing bug with ttkbootstrap importing before constucting Frame widget
+        try:
+            import ttkbootstrap
+            if ttkbootstrap is not None:
+                ttkbootstrap_installed = True
+        except ModuleNotFoundError:
+            pass
+    # Launching Wrapper class - container for UI root and Frame classes
+    ctrl_cls = WrapperMainUI(test_ttkbootstrap=(test_ttkbootstrap and ttkbootstrap_installed),
+                             test_customtkinter=(customtkinter_installed and test_customtkinter))
+    ctrl_cls.launch()
