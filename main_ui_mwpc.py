@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Main GUI script - visualization of images stream.
+Main GUI script - visualization of images stream (based on tkinter GUI library).
 
 @author: sklykov
 
