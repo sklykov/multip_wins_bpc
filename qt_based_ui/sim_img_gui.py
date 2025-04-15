@@ -4,6 +4,8 @@ Simple GUI for representing of generated noisy image using PyQT.
 
 @author: sklykov
 
+@license: GPL v3 (as it is enforced by the license of PyQt5).
+
 """
 # %% Imports
 from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QWidget, QGridLayout, QSpinBox, QCheckBox, QVBoxLayout
@@ -16,6 +18,8 @@ import pyqtgraph
 # %% Global variables as simple method for synchronization between Threads
 global flag_generation; flag_generation = False  # Straight way of synchronizing of button clicked on the GUI with the indepent thread process
 width_default = 1000; height_default = 1000  # Default width and height for generation of images
+
+# TODO: make model implementation of multithreaded application which generates images and updates main UI, remove standard Thread usage
 
 
 # %% Class wrapper for threaded noisy single picture generation
@@ -94,18 +98,16 @@ class SimUscope(QMainWindow):
     def __init__(self, img_height, img_width):
         """Create overall UI inside the QMainWindow widget."""
         super().__init__()
+        self.setWindowTitle("Display UI - Camera Image"); self.setGeometry(200, 200, 800, 700)
+        wid = QWidget(self); self.setCentralWidget(wid)  # setting central widget
+
+        # Central plot - Image display initialization
         self.imageGenerator = SingleImageGenerator(img_height, img_width); self.img_height = img_height; self.img_width = img_width
         self.img = np.zeros((self.img_height, self.img_width), dtype='uint8')  # Black initial image
-        self.setWindowTitle("Simulation of uscope camera"); self.setGeometry(200, 200, 800, 700)
-        # Buttons and ImageView setting on the main window
         self.plot = pyqtgraph.PlotItem(); self.plot.setXRange(0, self.img_width); self.plot.setYRange(0, self.img_height)
         self.imageWidget = pyqtgraph.ImageView(view=self.plot)  # The main widget for image showing
         self.imageWidget.ui.roiBtn.hide(); self.imageWidget.ui.menuBtn.hide()   # Hide ROI, Norm buttons from the ImageView
         self.imageWidget.setImage(self.img)  # Set image for representation in the ImageView widget
-        # self.roi = pyqtgraph.ROI((1, 1), size=(100, 100), rotatable=False, removable=True); self.plot.addItem(self.roi)
-        # self.qwindow = QWidget()  # The composing of all buttons and frame for image representation into one main widget
-        wid = QWidget(self); self.setCentralWidget(wid)  # Recommended way of creating central widget (ref. below)
-        # https://stackoverflow.com/questions/37304684/qwidgetsetlayout-attempting-to-set-qlayout-on-mainwindow-which-already/63268752#63268752
 
         # Buttons creation
         self.buttonGenSingleImg = QPushButton("Generate Single Pic"); self.buttonGenSingleImg.clicked.connect(self.generate_single_pic)
@@ -117,14 +119,13 @@ class SimUscope(QMainWindow):
         self.exposureTime.setPrefix("Exposure time: "); self.exposureTime.setMinimum(1); self.exposureTime.setMaximum(1000)
         self.exposureTime.setValue(100); self.exposureTime.adjustSize()
         self.quitButton = QPushButton("Quit"); self.quitButton.setStyleSheet("color: red")
-        self.quitButton.clicked.connect(self.quitClicked)
+
         # Grid layout below - the main layout pattern for all buttons and windos on the Main Window
         grid = QGridLayout(); wid.setLayout(grid)  # Grid layout created independetly of the
         grid.addWidget(self.buttonGenSingleImg, 0, 0, 1, 1); grid.addWidget(self.buttonContinuousGen, 0, 1, 1, 1)
         grid.addWidget(self.toggleTestPerformance, 0, 2, 1, 1); grid.addWidget(self.exposureTime, 0, 3, 1, 1)
         grid.addWidget(self.quitButton, 0, 5, 1, 1)
-        # vbox below - container for Height / Width buttons
-        vbox = QVBoxLayout()  # create independent layout and add it to the grid later
+        vbox = QVBoxLayout()  # create independent layout as container for Height / Width Spinboxes and add it to the grid later
         self.widthButton = QSpinBox(); self.heightButton = QSpinBox(); vbox.addWidget(self.widthButton)
         self.heightButton.setPrefix("Height: "); self.widthButton.setPrefix("Width: "); vbox.addWidget(self.heightButton)
         grid.addLayout(vbox, 0, 4, 1, 1); self.widthButton.setSingleStep(2); self.heightButton.setSingleStep(2)
@@ -132,11 +133,12 @@ class SimUscope(QMainWindow):
         self.widthButton.setMaximum(3000); self.heightButton.setMaximum(3000)
         self.widthButton.setValue(self.img_width); self.heightButton.setValue(self.img_height)
         self.widthButton.adjustSize(); self.heightButton.adjustSize()
-        # Set valueChanged event handlers
-        self.widthButton.valueChanged.connect(self.imgSizeChanged); self.heightButton.valueChanged.connect(self.imgSizeChanged)
         # ImageWidget should be central - for better representation of generated images
         grid.addWidget(self.imageWidget, 1, 0, 5, 6)  # the ImageView widget spans on ... rows and ... columns (2 values in the end)
-        # self.setCentralWidget(self.qwindow)  # Actually, allows to make both buttons and ImageView visible
+
+        # Set valueChanged event handlers
+        self.widthButton.valueChanged.connect(self.imgSizeChanged); self.heightButton.valueChanged.connect(self.imgSizeChanged)
+        self.quitButton.clicked.connect(self.quitClicked)
 
     def generate_single_pic(self):
         """
@@ -193,7 +195,6 @@ class SimUscope(QMainWindow):
         if flag_generation:
             flag_generation = False  # For notifiyng of Generation Thread to stop generation
             exp_time = self.exposureTime.value(); time.sleep((exp_time*2)/1000)  # Delay for waiting the Generation Thread ended
-            # print("Waited", exp_time*2, "ms for closing the Generation Thread")
             closeEvent.accept()  # Maybe redundant, but this is explicit accepting quit event
 
     def quitClicked(self):
