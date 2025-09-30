@@ -11,15 +11,18 @@ Simple GUI for representing of generated noisy image using PyQT.
 from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QWidget, QGridLayout, QSpinBox, QCheckBox, QVBoxLayout
 import numpy as np
 from generate_noise_pic import generate_noise_picture
+from acq_img_worker import ImagingThread
 from threading import Thread
 import time
 import pyqtgraph
 
 # %% Global variables as simple method for synchronization between Threads
-global flag_generation; flag_generation = False  # Straight way of synchronizing of button clicked on the GUI with the indepent thread process
+global flag_generation; flag_generation = False  # Straight way of synchronizing of button clicked on the GUI with the independent thread process
 width_default = 1000; height_default = 1000  # Default width and height for generation of images
 
-# TODO: make model implementation of multithreaded application which generates images and updates main UI, remove standard Thread usage
+# TODO:
+# 1) make model implementation of multithreaded application which generates images and updates main UI, remove standard Thread usage
+# 2) pythonize code (remove camel case notation for variables, clean up the old code)
 
 
 # %% Class wrapper for threaded noisy single picture generation
@@ -49,9 +52,9 @@ class ContinuousImageGenerator(Thread):
 
     meanGenTimes = np.zeros(200, dtype="uint")
 
-    def __init__(self, imageWidget, refresh_delay_ms: int = 100, height: int = 100, width: int = 100, testPerformance: bool = False):
-        Thread.__init__(self); self.height = height; self.width = width; self.testPerformance = testPerformance
-        self.imageWidget = imageWidget; self.refresh_delay_ms = refresh_delay_ms
+    def __init__(self, image_widget, refresh_delay_ms: int = 100, height: int = 100, width: int = 100, test_performance_flag: bool = False):
+        Thread.__init__(self); self.height = height; self.width = width; self.test_performance_flag = test_performance_flag
+        self.image_widget = image_widget; self.refresh_delay_ms = refresh_delay_ms
 
     def run(self):
         """
@@ -64,21 +67,21 @@ class ContinuousImageGenerator(Thread):
         """
         i = 0  # for adding the elements into preinitilized array for further mean generation time calculation
         while flag_generation:
-            if self.testPerformance:
+            if self.test_performance_flag:
                 t1 = time.time()
-                # Below - the workaround for preventing kernel diying during continuous generation without any delays
-                if self.refresh_delay_ms == 0:  # if the delay between frames is 0, than the generation is unstable
+                # Below - the workaround for preventing kernel dying during continuous generation without any delays
+                if self.refresh_delay_ms == 0:  # if the delay between frames is 0, then the generation is unstable
                     self.refresh_delay_ms += 1  # make the delay at least 1 ms
             image = generate_noise_picture(self.width, self.height)  # Get the noisy picture, width and height swapped
-            self.imageWidget.setImage(image)  # Set the image for representation by passed ImageView pyqtgraph widget
+            self.image_widget.setImage(image)  # Set the image for representation by passed ImageView pyqtgraph widget
             time.sleep(self.refresh_delay_ms/1000)  # Applying artificial delays between each image generation
             # If testing of Performance requested, then accumulating of passed times in the array performed
-            if self.testPerformance:
+            if self.test_performance_flag:
                 t2 = time.time()
                 if i < np.size(self.meanGenTimes):
                     self.meanGenTimes[i] = np.uint(np.round((t2-t1)*1000, 0)); i += 1  # Add the passed time to the array
         # If generation stopped and the test of performance was asked, then print out the mean generation time
-        if self.testPerformance:
+        if self.test_performance_flag:
             # Calculation of the final element that in the array is zero (passed time not saved)
             for j in range(np.size(self.meanGenTimes)):
                 if self.meanGenTimes[j] == 0:
@@ -92,7 +95,7 @@ class ContinuousImageGenerator(Thread):
 class SimUscope(QMainWindow):
     """Create the GUI with buttons for testing the performance of image showing / updating."""
 
-    __flagGeneration = False  # Private class variable for recording state of continuous generation
+    __generation_flag = False  # Private class variable for recording state of continuous generation
     __flagTestPerformance = False  # Private class variable for switching between test state by using QCheckBox
 
     def __init__(self, img_height, img_width):
@@ -105,9 +108,9 @@ class SimUscope(QMainWindow):
         self.imageGenerator = SingleImageGenerator(img_height, img_width); self.img_height = img_height; self.img_width = img_width
         self.img = np.zeros((self.img_height, self.img_width), dtype='uint8')  # Black initial image
         self.plot = pyqtgraph.PlotItem(); self.plot.setXRange(0, self.img_width); self.plot.setYRange(0, self.img_height)
-        self.imageWidget = pyqtgraph.ImageView(view=self.plot)  # The main widget for image showing
-        self.imageWidget.ui.roiBtn.hide(); self.imageWidget.ui.menuBtn.hide()   # Hide ROI, Norm buttons from the ImageView
-        self.imageWidget.setImage(self.img)  # Set image for representation in the ImageView widget
+        self.image_widget = pyqtgraph.ImageView(view=self.plot)  # The main widget for image showing
+        self.image_widget.ui.roiBtn.hide(); self.image_widget.ui.menuBtn.hide()   # Hide ROI, Norm buttons from the ImageView
+        self.image_widget.setImage(self.img)  # Set image for representation in the ImageView widget
 
         # Buttons creation
         self.buttonGenSingleImg = QPushButton("Generate Single Pic"); self.buttonGenSingleImg.clicked.connect(self.generate_single_pic)
@@ -133,12 +136,16 @@ class SimUscope(QMainWindow):
         self.widthButton.setMaximum(3000); self.heightButton.setMaximum(3000)
         self.widthButton.setValue(self.img_width); self.heightButton.setValue(self.img_height)
         self.widthButton.adjustSize(); self.heightButton.adjustSize()
-        # ImageWidget should be central - for better representation of generated images
-        grid.addWidget(self.imageWidget, 1, 0, 5, 6)  # the ImageView widget spans on ... rows and ... columns (2 values in the end)
+        # image_widget should be central - for better representation of generated images
+        grid.addWidget(self.image_widget, 1, 0, 5, 6)  # the ImageView widget spans on ... rows and ... columns (2 values in the end)
 
         # Set valueChanged event handlers
         self.widthButton.valueChanged.connect(self.imgSizeChanged); self.heightButton.valueChanged.connect(self.imgSizeChanged)
         self.quitButton.clicked.connect(self.quitClicked)
+
+        # Reimplementation of logic for getting images from pure Thread
+        self.img_acq_thr = ImagingThread(self); self.img_acq_thr.start()
+        self.img_acq_thr.acquired_image.connect(self.get_updated_image)
 
     def generate_single_pic(self):
         """
@@ -149,8 +156,13 @@ class SimUscope(QMainWindow):
         None.
 
         """
-        self.imageGenerator.start(); self.imageGenerator.join(); self.imageWidget.setImage(self.imageGenerator.image)
-        self.imageGenerator = SingleImageGenerator(self.img_height, self.img_width)
+        # self.imageGenerator.start(); self.imageGenerator.join(); self.image_widget.setImage(self.imageGenerator.image)
+        # self.imageGenerator = SingleImageGenerator(self.img_height, self.img_width)
+        self.img_acq_thr.resume_work()
+
+    def get_updated_image(self, img):
+        self.image_widget.setImage(img)
+        self.img_acq_thr.pause_work()  # pause the internal loop for the next execution (acquisition)
 
     def generate_continuous_pics(self):
         """
@@ -161,15 +173,15 @@ class SimUscope(QMainWindow):
         None.
 
         """
-        self.__flagGeneration = not self.__flagGeneration  # changing the state of generation
-        self.buttonContinuousGen.setDown(self.__flagGeneration)  # changing the visible state of button (clicked or not)
+        self.__generation_flag = not self.__generation_flag  # changing the state of generation
+        self.buttonContinuousGen.setDown(self.__generation_flag)  # changing the visible state of button (clicked or not)
         global flag_generation
-        flag_generation = self.__flagGeneration
-        if (self.__flagGeneration):
+        flag_generation = self.__generation_flag
+        if self.__generation_flag:
             self.toggleTestPerformance.setDisabled(True)  # Disable the check box for preventing test on during continuous generation
             self.exposureTime.setDisabled(True)  # Disable the exposure time control
             self.widthButton.setDisabled(True); self.heightButton.setDisabled(True)
-            continuousImageGen = ContinuousImageGenerator(self.imageWidget, self.exposureTime.value(),
+            continuousImageGen = ContinuousImageGenerator(self.image_widget, self.exposureTime.value(),
                                                           self.img_height, self.img_width,
                                                           self.toggleTestPerformance.isChecked())
             continuousImageGen.start()  # Run the threaded code
@@ -193,7 +205,8 @@ class SimUscope(QMainWindow):
         """
         global flag_generation
         if flag_generation:
-            flag_generation = False  # For notifiyng of Generation Thread to stop generation
+            flag_generation = False  # For notifying of Generation Thread to stop generation
+            self.img_acq_thr.stop()
             exp_time = self.exposureTime.value(); time.sleep((exp_time*2)/1000)  # Delay for waiting the Generation Thread ended
             closeEvent.accept()  # Maybe redundant, but this is explicit accepting quit event
 

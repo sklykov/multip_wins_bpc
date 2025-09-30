@@ -218,7 +218,7 @@ class MainCtrlUI(base_class):
 
         # Initialize communication queues and triggers
         self.commands2camera = Queue(maxsize=5); self.data_from_camera = Queue(maxsize=10)
-        self.trigger_commands = Event(); self.trigger_camera_data = Event()
+        self.trigger_commands = Event(); self.trigger_camera_data = Event()  # note that Event wraps condition and lock together
 
         # Disabling some buttons at the start
         self.snap_stream_btn.configure(state="disabled"); self.snap_image_btn.configure(state="disabled")
