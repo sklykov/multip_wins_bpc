@@ -35,16 +35,16 @@ def generate_noise_picture(height: int, width: int, pixel_type: str = 'uint8') -
         Generate image with even noise.
 
     """
-    img = np.zeros((1, 1), dtype='uint8')
+    image = np.zeros((1, 1), dtype='uint8')
     if (height >= 2) and (width >= 2):
         if pixel_type == 'uint8':
-            img = np.random.randint(0, high=255, size=(height, width), dtype='uint8')
+            image = np.random.randint(0, high=255, size=(height, width), dtype='uint8')
         if pixel_type == 'float':
-            img = np.random.rand(height, width)
+            image = np.random.rand(height, width)
     else:
         raise Exception("Specified height or width are less than 2")
 
-    return img
+    return image
 
 
 # %% Tests

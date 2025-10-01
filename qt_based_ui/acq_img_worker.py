@@ -15,15 +15,17 @@ from generate_noise_pic import generate_noise_picture
 
 # %% Class def.
 class ImagingThread(QThread):
-    # noinspection PyArgumentList - just for fixing wrong introspection for pyqtSignal in PyCharm
+    # comment below is for preventing wrong inspection results for pyqtSignal
+    # noinspection PyArgumentList
     acquired_image = pyqtSignal(np.ndarray)  # actual image shared as pyqtSignal, should be the class attribute, not instance one
 
-    def __init__(self, parent_object):
+    def __init__(self, parent_object, img_h: int, img_w: int):
         super().__init__(parent=parent_object)  # provide parent for auto managing by PyQt, can be QMainWindow
         self._mutex = QMutex()  # for locking / unlocking changing of the same variable (prevent *lost wake-up problem)
         # *lost wake-up problem: this class could potentially make _paused == False and calls wake...() but lost it this notification
         self._wait_condition = QWaitCondition()  # it hasn't internal lock for checking
         self._paused = True; self._running = True; self.pause_ms = 100
+        self.img_h, self.img_w = img_h, img_w
 
     def run(self):
         """
@@ -40,20 +42,36 @@ class ImagingThread(QThread):
             self._mutex.unlock()  # when it's running continuously, it allows main Thread to call pause / stop methods and set flags
 
             # Acquiring an image
-            img = generate_noise_picture(100, 100)
-            self.acquired_image.emit(img)
-            print("Image acquired", flush=True)
+            img = generate_noise_picture(height=self.img_h, width=self.img_w)
+            self.acquired_image.emit(img)  # will send the generated data to the specified handler method
+            # The binding of the pyqtSignal and handling method done in the calling class (SimUscope) by pyqtSignal.connect(self.method)
 
-            # Some pause (instead of exposure time - for Simulation)
+            # Some pause (instead of exposure time - for Simulation of image acquisition)
             self.msleep(self.pause_ms)
 
     def resume_work(self):
+        """
+        Resume paused by QWaitCondition().wait(QMutex) execution of a loop.
+
+        Returns
+        -------
+        None.
+
+        """
         self._mutex.lock()  # guarantee to change _paused variable only by this method
         self._paused = False
-        self._wait_condition.wakeOne()   # wake up sleeping method
+        self._wait_condition.wakeOne()   # wake up sleeping method (self._wait_condition.wait(self._mutex))
         self._mutex.unlock()  # release lock
 
     def pause_work(self):
+        """
+        Pause the main run loop by setting thread-safely the flag.
+
+        Returns
+        -------
+        None.
+
+        """
         self._mutex.lock()  # guarantee to change _paused variable only by this method
         self._paused = True
         self._mutex.unlock()  # release lock
@@ -71,10 +89,20 @@ class ImagingThread(QThread):
         -------
         None
         """
+        self._mutex.lock()
         if pause_ms > 0:
             self.pause_ms = pause_ms
+        self._mutex.unlock()  # release lock
 
     def stop(self):
+        """
+        Stop main loop execution by setting thread-safely the flag.
+
+        Returns
+        -------
+        None.
+
+        """
         self._mutex.lock()
         self._running = False  # set flag to stop run
         self._wait_condition.wakeOne()  # if loop waits for a notification
