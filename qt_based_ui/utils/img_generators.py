@@ -4,8 +4,6 @@ Store noisy image generators in a module.
 
 @author: sklykov
 
-@license: GPL v3 (as it is enforced by the license of PyQt5).
-
 """
 # %% Global imports
 from threading import Thread

@@ -4,31 +4,30 @@ Simple GUI for representing of generated noisy image using PyQT.
 
 @author: sklykov
 
-@license: GPL v3 (as it is enforced by the license of PyQt5).
+@license: GPL v3 (as it is enforced by the license of PyQt5. If PySide is installed, the license could be different).
 
 """
 # %% Global imports
-from PyQt5.QtGui import QCloseEvent
-from PyQt5.QtCore import QTimer
-from PyQt5.QtWidgets import QApplication, QMainWindow, QPushButton, QWidget, QGridLayout, QSpinBox, QCheckBox, QVBoxLayout
 import numpy as np
 import time
+# Switching below to qtpy - the library that decides which actual backend is installed - pyqt or pyside
+# 'qtpy' has MIT license, allowing to use it in any project
+# Launching of this program has been tested successfully in Python 3.9 env with pyside2 installed
+from qtpy.QtGui import QCloseEvent
+from qtpy.QtCore import QTimer
+from qtpy.QtWidgets import QApplication, QMainWindow, QPushButton, QWidget, QGridLayout, QSpinBox, QCheckBox, QVBoxLayout
+# pyqtgraph should automatically resolve the actual backend (pyqt or pyside)
 import pyqtgraph
 
-# %% Local imports
-from acq_img_worker import ImagingThread
-
-# TODO points below
-# 1) make model implementation of multithreaded application which generates images and updates main UI, remove standard Thread usage
-# 2) pythonize code (remove camel case notation for variables, clean up the old code)
+# %% Local imports (modules)
+from utils.acq_img_worker import ImagingThread
 
 
-# %% Implementation of all windows inside the child class
+# %% Initially, SimUscope means Simulated Microscope control. Remained for limited image display below
 class SimUscope(QMainWindow):
     """Create the GUI with buttons for testing the performance of image showing / updating."""
 
-    __generation_flag: bool = False  # Private class variable for recording state of continuous generation
-    __flagTestPerformance: bool = False  # Private class variable for switching between test state by using QCheckBox
+    __generation_flag: bool = False  # private class flag for checking that continuous snaps stream is running
 
     def __init__(self, img_height: int, img_width: int):
         """Create overall UI inside the QMainWindow widget."""
@@ -51,21 +50,21 @@ class SimUscope(QMainWindow):
         self.image_widget.setImage(self.img)  # Set image for representation in the ImageView widget
 
         # Buttons creation
-        self.buttonGenSingleImg = QPushButton("Generate Single Pic"); self.buttonGenSingleImg.clicked.connect(self.generate_single_pic)
-        self.buttonContinuousGen = QPushButton("Continuous Generation")  # Switches on/off continuous generation
+        self.snap_single_img_btn = QPushButton("Generate Single Pic"); self.snap_single_img_btn.clicked.connect(self.generate_single_pic)
+        self.snaps_stream_btn = QPushButton("Continuous Generation")  # Switches on/off continuous generation
         self.toggle_performance_test = QCheckBox("Test Performance"); self.toggle_performance_test.setEnabled(True)
         self.toggle_performance_test.setChecked(False)  # setChecked - set the state of a button
-        self.buttonContinuousGen.clicked.connect(self.generate_continuous_pics); self.buttonContinuousGen.setCheckable(True)
+        self.snaps_stream_btn.clicked.connect(self.generate_continuous_pics); self.snaps_stream_btn.setCheckable(True)
         self.exp_time_ctrl = QSpinBox(self); self.exp_time_ctrl.setSingleStep(1); self.exp_time_ctrl.setSuffix(" ms")
         self.exp_time_ctrl.setPrefix("Exposure time: "); self.exp_time_ctrl.setMinimum(1); self.exp_time_ctrl.setMaximum(1000)
         self.exp_time_ctrl.setValue(100); self.exp_time_ctrl.adjustSize()
-        self.quitButton = QPushButton("Quit"); self.quitButton.setStyleSheet("color: red")
+        self.quit_btn = QPushButton("Quit"); self.quit_btn.setStyleSheet("color: red")
 
         # Grid layout below - the main layout pattern for all buttons and windows on the Main Window
         grid = QGridLayout(); wid.setLayout(grid)  # Grid layout created independently of the
-        grid.addWidget(self.buttonGenSingleImg, 0, 0, 1, 1); grid.addWidget(self.buttonContinuousGen, 0, 1, 1, 1)
+        grid.addWidget(self.snap_single_img_btn, 0, 0, 1, 1); grid.addWidget(self.snaps_stream_btn, 0, 1, 1, 1)
         grid.addWidget(self.toggle_performance_test, 0, 2, 1, 1); grid.addWidget(self.exp_time_ctrl, 0, 3, 1, 1)
-        grid.addWidget(self.quitButton, 0, 5, 1, 1)
+        grid.addWidget(self.quit_btn, 0, 5, 1, 1)
         vbox = QVBoxLayout()  # create independent layout as container for Height / Width Spinboxes and add it to the grid later
         self.width_ctrl = QSpinBox(self); self.height_ctrl = QSpinBox(self); vbox.addWidget(self.width_ctrl)
         self.height_ctrl.setPrefix("Height: "); self.width_ctrl.setPrefix("Width: "); vbox.addWidget(self.height_ctrl)
@@ -79,7 +78,7 @@ class SimUscope(QMainWindow):
 
         # Set valueChanged event handlers for buttons
         self.width_ctrl.valueChanged.connect(self.image_sizes_changed); self.height_ctrl.valueChanged.connect(self.image_sizes_changed)
-        self.quitButton.clicked.connect(self.quit_clicked); self.exp_time_ctrl.valueChanged.connect(self.change_exp_time)
+        self.quit_btn.clicked.connect(self.quit_clicked); self.exp_time_ctrl.valueChanged.connect(self.change_exp_time)
 
         # Reimplementation of logic for getting images from pure Thread
         self.img_acq_thr = ImagingThread(self, img_height, img_width); self.img_acq_thr.start()
@@ -146,19 +145,19 @@ class SimUscope(QMainWindow):
 
         """
         self.__generation_flag = not self.__generation_flag  # changing the state of generation
-        self.buttonContinuousGen.setDown(self.__generation_flag)  # changing the visible state of button (clicked or not)
+        self.snaps_stream_btn.setDown(self.__generation_flag)  # changing the visible state of button (clicked or not)
         # Generation works as emulating single snap acquisition and representation
         if self.__generation_flag:
             self.toggle_performance_test.setDisabled(True)  # Disable the checkbox for preventing test on during continuous generation
             self.exp_time_ctrl.setDisabled(True)  # Disable the exposure time control
-            self.width_ctrl.setDisabled(True); self.height_ctrl.setDisabled(True)
+            self.width_ctrl.setDisabled(True); self.height_ctrl.setDisabled(True); self.snap_single_img_btn.setDisabled(True)
             if self.toggle_performance_test.isChecked():
                 self.start_time = time.perf_counter(); self.n_performance_counts = 0
             self.update_img_task.singleShot(1, self.generate_single_pic)   # assign single update task (snaps stream)
         else:
-            time.sleep((self.exp_time_ctrl.value()*2)/1000)
-            self.toggle_performance_test.setEnabled(True); self.exp_time_ctrl.setEnabled(True)
-            self.width_ctrl.setEnabled(True); self.height_ctrl.setEnabled(True);  self.n_performance_counts = 0
+            time.sleep((self.exp_time_ctrl.value()*2)/1000); self.exp_time_ctrl.setEnabled(True)
+            self.toggle_performance_test.setEnabled(True); self.snap_single_img_btn.setEnabled(True)
+            self.width_ctrl.setEnabled(True); self.height_ctrl.setEnabled(True); self.n_performance_counts = 0
 
     def change_exp_time(self):
         """
@@ -216,6 +215,7 @@ class SimUscope(QMainWindow):
         """
         if self.__generation_flag:
             self.__generation_flag = False  # For notifying of Generation Thread to stop generation
+            self.img_acq_thr.stop()
             time.sleep((self.exp_time_ctrl.value()*2)/1000)  # Artificial delay for waiting the Generation Thread ended
         self.close()  # Calls the closing event for QMainWindow
 
@@ -234,7 +234,7 @@ class SimUscope(QMainWindow):
         self.img_acq_thr.acquired_image.connect(self.get_updated_image)
 
 
-# %% Tests
+# %% Launch the GUI
 if __name__ == "__main__":
     width_default = 1000; height_default = 1000  # Default width and height for generation of images
     my_app = QApplication([])  # application without any command-line arguments

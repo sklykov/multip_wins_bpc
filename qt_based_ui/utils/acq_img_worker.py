@@ -9,15 +9,20 @@ Generate noisy image on the QThread.
 """
 # %% Imports
 import numpy as np
-from PyQt5.QtCore import QThread, pyqtSignal, QMutex, QWaitCondition
-from generate_noise_pic import generate_noise_picture
+from qtpy.QtCore import QThread, Signal, QMutex, QWaitCondition
+
+# Local import resolving if this module imported by the main one
+if __name__ == '__main__':
+    from generate_noise_pic import generate_noise_picture
+else:
+    from .generate_noise_pic import generate_noise_picture
 
 
 # %% Class def.
 class ImagingThread(QThread):
-    # comment below is for preventing wrong inspection results for pyqtSignal
+    # comment below is for preventing wrong inspection results for Signal
     # noinspection PyArgumentList
-    acquired_image = pyqtSignal(np.ndarray)  # actual image shared as pyqtSignal, should be the class attribute, not instance one
+    acquired_image = Signal(np.ndarray)  # actual image shared as Signal, should be the class attribute, not instance one
 
     def __init__(self, parent_object, img_h: int, img_w: int):
         super().__init__(parent=parent_object)  # provide parent for auto managing by PyQt, can be QMainWindow
@@ -44,7 +49,7 @@ class ImagingThread(QThread):
             # Acquiring an image
             img = generate_noise_picture(height=self.img_h, width=self.img_w)
             self.acquired_image.emit(img)  # will send the generated data to the specified handler method
-            # The binding of the pyqtSignal and handling method done in the calling class (SimUscope) by pyqtSignal.connect(self.method)
+            # The binding of the Signal and handling method done in the calling class (SimUscope) by Signal.connect(self.method)
 
             # Some pause (instead of exposure time - for Simulation of image acquisition)
             self.msleep(self.pause_ms)

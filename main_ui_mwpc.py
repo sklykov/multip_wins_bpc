@@ -24,9 +24,8 @@ from tkinter.ttk import Frame as ttkFrame
 import platform
 import ctypes
 from pathlib import Path
-import matplotlib.pyplot as plt; plt.ion()
-# import canvas container from matplotlib for tkinter (for toolbar - NavigationToolbar2Tk)
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg  # matplotlib canvas container for tkinter
 import matplotlib.figure as pltFigure   # matplotlib figure for showing images
 import time
 import inspect
@@ -41,21 +40,21 @@ try:
 except ModuleNotFoundError:
     print("Please install 'tkthread' from https://pypi.org/project/tkthread/ for making tkinter thread-safe")
 
-# Testing prestyled and configured 'ttkbootstrap' library - CHECK and import should be shifted after class declaration due to some
+# Testing pre-styled and configured 'ttkbootstrap' library - CHECK and import should be shifted after class declaration due to some
 # issue of importing it and after declaration of ttk Style below in the MainCtrlUI class. Stable fix - delete ttkbootstrap
 
 # Testing flags / parameters
 test_ttkbootstrap = False  # in general, this library should improve styling, but it requires changing of tk widgets to ttk ones
 test_customtkinter = False  # testing 'customtkinter' library
 
-# Testing prestyled and configured 'customtkinter' library
+# Testing pre-styled and configured 'customtkinter' library
 try:
     from customtkinter import CTk, CTkFrame
     customtkinter_installed = True
 except ModuleNotFoundError:
     customtkinter_installed = False
 
-# Below - main concept in customization of a style by using 'customtkinter' library: all standard widgets should exchanged to
+# Below - main concept in customization of a style by using 'customtkinter' library: all standard widgets should be exchanged to
 # the counterparts from it, like base class before: CTkFrame instead of standard Frame class
 if test_customtkinter and customtkinter_installed:
     base_class = CTkFrame
@@ -73,6 +72,10 @@ else:
     from .utils.utility_funcs import clean_mp_queue
     from .camera.camera_wrapper import CameraWrapper, cameras_ctrl_types
     from .containers.spinbox_wrapper import SpinboxWrapper
+
+# Switch on interactive behaviour of matplotlib only if it's not switched on
+if not plt.isinteractive():
+    plt.ion()
 
 # %% Script-wide parameters
 current_year = datetime.now().strftime('%Y')
@@ -357,8 +360,8 @@ class MainCtrlUI(base_class):
             if self.snaps_stream_task is None:
                 self.pause_snaps_stream = False  # set not to pause repeating assigning the tasks
                 self.snaps_stream_task = self.after(15, self.run_snap_stream)
-            self.menubar.delete(0, "end")  # delete all entries in menu, effictively hide all menu entries
-            self.master.resizable(False, False); self.windows_resizable = False  # make window not resizable forcely
+            self.menubar.delete(0, "end")  # delete all entries in menu, effectively hide all menu entries
+            self.master.resizable(False, False); self.windows_resizable = False  # make window not resizable forcibly
             self.master.wm_overrideredirect(True)  # prevent moving window around, making the UI more stable
             self.focus_force()
         else:
@@ -531,7 +534,7 @@ class MainCtrlUI(base_class):
                         self.img_h, self.img_w, _ = self.current_image.shape
                     else:
                         print("Expect to get grayscaled or RGB image, received other shaped image", flush=True)
-                    # Below - automatic change of figure width for adjusting to the ratio of acquired image width / heigt
+                    # Below - automatic change of figure width for adjusting to the ratio of acquired image width / height
                     if self.figure_size_w / self.figure_size_h != self.img_w / self.img_h:
                         self.figure_size_h = round(self.figure_size_w*(self.img_h / self.img_w), 1)  # change height of a figure (not shift UI)
                         self.reinitialize_image_figure(True)  # flag for avoiding recall this method in the end of the called method
@@ -816,9 +819,9 @@ if __name__ == "__main__":
         if "IPython" in str(frame):
             print("\nNOTE: most probably, this script has been launched in IPython, there it has sometimes the issue with relaunching "
                   + "after using of the adjusting window"); break
-    # Shifted check if the ttkbootstrap was installede
+    # Shifted check if the ttkbootstrap was installed
     ttkbootstrap_installed = False
-    if test_ttkbootstrap:  # quick fix for not stably appearing bug with ttkbootstrap importing before constucting Frame widget
+    if test_ttkbootstrap:  # quick fix for not stably appearing bug with ttkbootstrap importing before constructing Frame widget
         try:
             import ttkbootstrap
             if ttkbootstrap is not None:
