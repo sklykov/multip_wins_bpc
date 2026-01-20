@@ -8,6 +8,9 @@ Embedded camera class controlled by OpenCV methods.
 # %% Global imports
 import numpy as np
 from pathlib import Path
+import platform
+import warnings
+from typing import Union
 
 # Basic check that pyopencv library installed
 global pyopencv_installed
@@ -38,6 +41,16 @@ class EmbeddedLaptopCamera(AbstractCamera):
         self.camera_handle = None; self.exp_t_changeable = False
         self.exp_t_ms = 0; self.img_width = 0; self.img_height = 0
         self.camera_report = ""  # default - empty report (no problems)
+        self.platform = str(platform.system()).lower()
+        if "windows" in self.platform:
+            self.backend = cv2.CAP_DSHOW
+        elif "linux" in self.platform:
+            self.backend = cv2.CAP_V4L2
+        elif "darwin" in self.platform:
+            self.backend = cv2.CAP_AVFOUNDATION
+        else:
+            __mess = "\nNot recognized OS (platform): " + self.platform + "\n Checked ones: windows, linux, darwin"
+            self.backend = 0; warnings.warn(__mess)  # 0 - recommended as default parameter
 
     def camera_type() -> str:
         """
@@ -49,7 +62,7 @@ class EmbeddedLaptopCamera(AbstractCamera):
             Camera name.
 
         """
-        return "Laptop_Embedded"
+        return "Laptop_Emb"
 
     def initialize(self) -> bool:
         """
@@ -63,23 +76,17 @@ class EmbeddedLaptopCamera(AbstractCamera):
         if pyopencv_installed:
             # Search for a camera from indices 0, 1, ... 5
             for i in range(0, 6, 1):
-                camera = cv2.VideoCapture(i)
+                camera = cv2.VideoCapture(i, self.backend)
                 if camera.isOpened():
-                    print(f"Camera with index {i} is available and will be used", flush=True)
-                    current_exposure_value = camera.get(cv2.CAP_PROP_EXPOSURE)
-                    if current_exposure_value > 0.0:
-                        self.exp_t_changeable = True; self.exp_t_ms = current_exposure_value
-                    self.img_width = camera.get(cv2.CAP_PROP_FRAME_WIDTH); self.img_height = camera.get(cv2.CAP_PROP_FRAME_HEIGHT)
-                    self.camera_handle = camera; break
+                    print(f"Camera with index {i} is opened on OS '{self.platform}' with used backend: {camera.getBackendName()}", flush=True)
+                    self.camera_handle = camera; self.img_width = camera.get(cv2.CAP_PROP_FRAME_WIDTH)
+                    self.img_height = camera.get(cv2.CAP_PROP_FRAME_HEIGHT); break
             if self.camera_handle is not None and self.camera_handle.isOpened():
-                self.camera_report = ""
-                return True
+                self.camera_report = ""; return True
             else:
-                self.camera_report = "No available camera has been found, check avaibility of an embedded camera"
-                return False
+                self.camera_report = "No available camera has been found, check avaibility of an embedded camera"; return False
         else:
-            self.camera_report = "Required library 'pyopencv' not installed"
-            return False
+            self.camera_report = "Required library 'pyopencv' not installed"; return False
 
     def initialization_status(self) -> str:
         """
@@ -105,49 +112,43 @@ class EmbeddedLaptopCamera(AbstractCamera):
         """
         read_flag, frame = self.camera_handle.read()  # read single frame
         if read_flag:
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # required conversion from BGR to RGB
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # required conversion from BGR to RGB, because default is BGR
             return frame
         else:
             return None
 
-    def set_exp_time(self, exp_t_ms: int) -> bool:
+    def access_camera_settings(self):
         """
-        Set exposure time in ms.
+        Open external window with all available settings.
+
+        Returns
+        -------
+        None.
+
+        """
+        self.camera_handle.set(cv2.CAP_PROP_SETTINGS, 1)  # open external window with all available settings
+
+    def set_and_report_prop(self, prop: int, value: float) -> Union[float, None]:
+        """
+        Set some property value and get the result afterwards for checking if it is ignored.
 
         Parameters
         ----------
-            Exposure time in ms.
+        prop : int
+            cv2.propId of the property.
+        value : float
+            Some value to set.
 
         Returns
         -------
-        bool
-            If check is succesfull and exposure time is set.
+        float or None
+            Actual value if set.
 
         """
-        if 0 < exp_t_ms <= 2000:
-            if self.exp_t_changeable:
-                try:
-                    self.camera_handle.set(cv2.CAP_PROP_EXPOSURE, exp_t_ms)  # trying to set exposure time
-                    self.exp_t_ms = self.camera_handle.get(cv2.CAP_PROP_EXPOSURE)  # getting an exposure time acknowledged by a camera
-                except Exception:
-                    return False
-                return True
-            else:
-                return False
-        else:
-            return False
-
-    def get_exp_time(self) -> int:
-        """
-        Get stored exposure time in ms.
-
-        Returns
-        -------
-        int
-            Exposure time in ms.
-
-        """
-        return self.exp_t_ms
+        if self.camera_handle is not None and self.camera_handle.isOpened():
+            self.camera_handle.set(prop, value)
+            return self.camera_handle.get(prop)
+        return None
 
     def close(self):
         """

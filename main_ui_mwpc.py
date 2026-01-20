@@ -33,6 +33,7 @@ from datetime import datetime  # for getting current year
 from multiprocessing import Queue, Event
 from queue import Empty
 import numpy as np
+from typing import Union
 
 # Make tkinter Thread Safe. Ref. to the package: https://pypi.org/project/tkthread/  Note that the license is Apache Software License.
 try:
@@ -99,6 +100,7 @@ class MainCtrlUI(base_class):
         self.exp_time_ms = 50  # default value for exposure time - 100 ms, equal to 10 FPS
         self.min_exp_time_ms = 1; self.max_exp_time_ms = 2000  # default range of limits on exposure time
         self.pause_snaps_stream = True  # default flag for preventing too many assigned tasks if pause should be made in a snaps stream
+        self.camera_controls_opened = False  # default for checking that camera controls window is opened
 
         # Default values of GUI provided by tkinter (for adjusting on the separate window)
         self.main_font = font.nametofont("TkDefaultFont"); self.entry_font = font.nametofont("TkTextFont")
@@ -201,6 +203,11 @@ class MainCtrlUI(base_class):
         self.exp_time_selector.pack(side=LEFT, padx=self.padx//2, pady=self.pady//2)
         self.exp_time_selector.bind('<Return>', self.set_exp_time); self.exp_time_selector.bind('<FocusOut>', self.set_exp_time)
 
+        # Special camera action btn (can be extended and reused for special settings)
+        self.cam_settings_btn_style = 'CameraProps.TButton'; self.widgets_styles.configure(self.cam_settings_btn_style, foreground='#ac0f0f')
+        self.cam_settings_btn = Button(master=self.buttons_frame, text="Camera Settings", command=self.access_camera_settings,
+                                       style=self.cam_settings_btn_style)
+
         # FPS indicator reported after acquisition
         self.acquired_images = 0; self.fps = 0  # variables
         self.fps_label = Label(master=self.buttons_frame, text=f"Measured FPS: {self.fps}")  # label for showing measured FPS
@@ -211,7 +218,7 @@ class MainCtrlUI(base_class):
         self.snap_image_btn.pack(side=TOP, padx=self.padx, pady=self.pady)
         self.snap_stream_btn.pack(side=TOP, padx=self.padx, pady=self.pady)
         self.record_stream_btn.pack(side=TOP, padx=self.padx, pady=self.pady)
-        self.exp_time_sel_frame.pack(side=TOP, padx=self.padx, pady=self.pady)
+        self.cam_settings_btn.pack(side=TOP, padx=self.padx, pady=self.pady)
         self.fps_label.pack(side=TOP, padx=self.padx, pady=self.pady)
 
         # Pack plot widget with the image and Frame with buttons (grid layout removed)
@@ -225,7 +232,7 @@ class MainCtrlUI(base_class):
 
         # Disabling some buttons at the start
         self.snap_stream_btn.configure(state="disabled"); self.snap_image_btn.configure(state="disabled")
-        self.record_stream_btn.configure(state="disabled")
+        self.record_stream_btn.configure(state="disabled"); self.cam_settings_btn.configure(state="disabled")
 
         # Open Simulated camera as a default
         self.open_camera()
@@ -255,8 +262,10 @@ class MainCtrlUI(base_class):
                 if not self.data_from_camera.empty():
                     if self.data_from_camera.get_nowait() == "Initialized":
                         print(f"{self.selected_camera.get()} Camera Opened", flush=True); self.camera_opened = True
-                        self.camera_status_label.config(text=self.camera_act_text, style=self.camera_init_status_style); self.update()
+                        self.camera_status_label.config(text=self.camera_act_text, style=self.camera_init_status_style)
+                        # Enable default snap button
                         self.snap_stream_btn.configure(state="normal"); self.snap_image_btn.configure(state="normal")
+                        self.cam_settings_btn.configure(state="normal"); self.update()
                     elif self.data_from_camera.get_nowait() == "NOT Initialized":
                         print(f"{self.selected_camera.get()} Camera Opened", flush=True); self.camera_opened = False
                         self.camera_status_label.config(text=self.camera_inact_text, style=self.camera_error_status_style)
@@ -278,9 +287,8 @@ class MainCtrlUI(base_class):
         """
         if self.snaps_stream_flag and not self.record_flag:  # estimation of FPS for snaps stream should be performed in the main UI
             t1 = time.perf_counter()  # will be used for setting FPS setting
-        self.commands2camera.put_nowait("Snap"); time.sleep(self.sleep_time_actions_ms/1.6); self.trigger_commands.set()
-        trigger_set = self.trigger_camera_data.wait(timeout=5.0); time.sleep(self.sleep_time_actions_ms/1.6)
-        # Dev. Note: pausing by time.sleep() makes the snaps stream mode stable
+        self.send_cmd2camera("Snap"); trigger_set = self.trigger_camera_data.wait(timeout=5.0)
+        time.sleep(self.sleep_time_actions_ms/1.65)  # Dev. Note: pausing by time.sleep() makes the snaps stream mode stable
         if trigger_set:
             self.trigger_camera_data.clear()  # set to the default state
             try:
@@ -291,9 +299,6 @@ class MainCtrlUI(base_class):
                     self.acquired_images += 1   # count number of acquired images
                     if self.acquired_images > 10_000_001:  # auto reset large accumulated # of images
                         self.acquired_images = 1
-                    # if not self.record_flag and not self.snaps_stream_flag:
-                    #     if self.acquired_images == 3 or self.acquired_images % 50 == 0:  # query measured FPS (3 images or after 50 acquired)
-                    #         self.after(9 + self.fast_fps_overhead, self.query_fps)
                     if self.snaps_stream_flag and not self.record_flag:
                         passed_s = round((time.perf_counter() - t1), 9)
                         if self.fps == 0:
@@ -303,7 +308,6 @@ class MainCtrlUI(base_class):
                             self.index_fps_buffer = 0  # set to the default value
                             self.ring_fps_buffer[self.index_fps_buffer] = self.fps; self.index_fps_buffer += 1
                         else:
-                            # self.fps = int(round(0.5*(self.fps + round(1.0/passed_s, 0)), 0))  # averaging of estimated FPS (not stable)
                             # below - averaging 5 stored measured FPS for more stable estimation of it
                             if self.index_fps_buffer < len(self.ring_fps_buffer) - 1:
                                 self.ring_fps_buffer[self.index_fps_buffer] = self.fps; self.index_fps_buffer += 1
@@ -326,7 +330,7 @@ class MainCtrlUI(base_class):
                             self.fast_fps_overhead = 4
                         elif self.fps > 100:
                             self.fast_fps_overhead = 5
-                    # schedule asynchronous call to show an image with some delays for making GUI more stable
+                    # schedule asynchronous call to show an image with some delays for making GUI more stable / responsive
                     self.show_image_task = self.after(7 + self.fast_fps_overhead, self.show_image)
                 else:
                     print("Received from the camera:", received_data, flush=True)
@@ -350,7 +354,7 @@ class MainCtrlUI(base_class):
         self.snaps_stream_flag = not self.snaps_stream_flag  # change the flag
         if self.snaps_stream_flag:
             self.snap_image_btn.config(state="disabled")  # disable the single snap button
-            self.record_stream_btn.configure(state="normal"); self.exp_time_selector.configure(state="disabled")
+            self.record_stream_btn.configure(state="normal"); self.cam_settings_btn.configure(state="disabled")
             self.retain_resizable_flag = self.windows_resizable  # save the previously stored value
             self.camera_selector.config(state="disabled")
             # Disable labels in Settings menu
@@ -379,7 +383,7 @@ class MainCtrlUI(base_class):
             for label in self.labels_actions_menu:
                 self.actions_menu.entryconfig(label, state="normal")
             self.snap_stream_btn.configure(style=self.snap_stream_on_btn_style_name, text=self.snap_stream_on_text)
-            self.exp_time_selector.configure(state="normal"); self.camera_selector.config(state="normal")
+            self.cam_settings_btn.configure(state="normal"); self.camera_selector.config(state="normal")
             self.master.resizable(self.retain_resizable_flag, self.retain_resizable_flag)
             self.windows_resizable = self.retain_resizable_flag  # make window resizable
             self.master.wm_overrideredirect(False)   # restore moving window around
@@ -415,8 +419,7 @@ class MainCtrlUI(base_class):
             if self.snaps_stream_flag and self.snaps_stream_task is not None:
                 self.pause_snaps_stream = True
                 self.after_cancel(self.snaps_stream_task)  # make a pause in the live stream
-            self.commands2camera.put_nowait("Start Recording"); time.sleep(self.sleep_time_actions_ms/1.5); self.trigger_commands.set()
-            time.sleep(self.sleep_time_actions_ms/1.5)
+            self.send_cmd2camera("Start Recording")
             self.record_stream_btn.configure(style=self.record_stream_off_btn_style_name, text=self.record_stream_off_text)
             if self.snaps_stream_flag:
                 self.pause_snaps_stream = False
@@ -425,8 +428,7 @@ class MainCtrlUI(base_class):
             if self.snaps_stream_flag and self.snaps_stream_task is not None:
                 self.pause_snaps_stream = True
                 self.after_cancel(self.snaps_stream_task)  # make a pause in the live stream
-            self.commands2camera.put_nowait("Stop Recording"); time.sleep(self.sleep_time_actions_ms/1.5); self.trigger_commands.set()
-            time.sleep(self.sleep_time_actions_ms/1.5)
+            self.send_cmd2camera("Stop Recording")
             self.record_stream_btn.configure(style=self.record_stream_on_btn_style_name, text=self.record_stream_on_text)
             if self.snaps_stream_flag:
                 self.pause_snaps_stream = False
@@ -434,40 +436,7 @@ class MainCtrlUI(base_class):
 
     # %% Camera settings
     def set_exp_time(self, *args):
-        """
-        Handle setting of an exposure time.
-
-        Parameters
-        ----------
-        *args : int
-            Provided by tkinter logic.
-
-        Returns
-        -------
-        None.
-
-        """
-        if self.exp_time_selector_wr.validate_input():
-            command = ("Set Exposure Time", int(self.exp_time_value.get()))  # explicitly construct a tuple for sending
-            self.commands2camera.put_nowait(command)  # send as a command
-            time.sleep(self.sleep_time_actions_ms/1.5); self.trigger_commands.set()
-            trigger_set = self.trigger_camera_data.wait(timeout=5.5); time.sleep(self.sleep_time_actions_ms/1.5)
-            if trigger_set:
-                self.trigger_camera_data.clear()  # set to the default state
-                self.acquired_images = 0  # reset # of acquired images
-                self.fps = 0
-                # self.fps_label.config(text=f"Measured FPS: {self.fps}")  # update FPS label
-                try:
-                    received_data = self.data_from_camera.get_nowait()
-                    if isinstance(received_data, int):  # reported assigned exposure time
-                        self.exp_time_value.set(received_data)
-                    else:
-                        print("Report from Camera:", received_data, flush=True)
-                except Empty:
-                    print("No reported Exposure Time", flush=True)
-            else:
-                print("Something wrong with Set Exposure Time, the TIMEOUT happened in a trigger wait function", flush=True)
-        self.focus()
+        pass
 
     def query_fps(self):
         """
@@ -478,9 +447,8 @@ class MainCtrlUI(base_class):
         None.
 
         """
-        self.commands2camera.put_nowait("Get FPS"); time.sleep(self.sleep_time_actions_ms/1.65); self.trigger_commands.set()
-        trigger_set = self.trigger_camera_data.wait(timeout=5.0); time.sleep(self.sleep_time_actions_ms/1.65)
-        # Dev. Note: pausing by time.sleep() makes the snaps stream mode stable
+        self.send_cmd2camera("Get FPS"); trigger_set = self.trigger_camera_data.wait(timeout=5.0)
+        time.sleep(self.sleep_time_actions_ms/1.65)  # Dev. Note: pausing by time.sleep() makes the snaps stream mode stable
         if trigger_set:
             self.trigger_camera_data.clear()  # set to the default state
             try:
@@ -507,8 +475,18 @@ class MainCtrlUI(base_class):
         None.
 
         """
-        self.commands2camera.put_nowait(("Measured FPS", self.fps)); time.sleep(self.sleep_time_actions_ms/1.5)
-        self.trigger_commands.set(); time.sleep(self.sleep_time_actions_ms/1.5)
+        self.send_cmd2camera(("Measured FPS", self.fps))
+
+    def access_camera_settings(self):
+        """
+        Handle Open / Close of camera controls settings.
+
+        Returns
+        -------
+        None.
+
+        """
+        self.send_cmd2camera("Open Settings")  # only direct way of communication - open only (ignore if opened)
 
     # %% Show acquired image
     def show_image(self):
@@ -572,7 +550,7 @@ class MainCtrlUI(base_class):
                     self.min_pixel_value = int(np.round(self.max_pixel_value, 0))
             self.display_image = False
 
-    # %% Camera control
+    # %% Camera selection
     def change_active_camera(self, selected_camera):
         """
         Change the active camera.
@@ -589,7 +567,7 @@ class MainCtrlUI(base_class):
         """
         if not selected_camera == self.active_camera:  # check that other than the current active camera selected
             self.snap_stream_btn.configure(state="disabled"); self.snap_image_btn.configure(state="disabled")
-            self.exp_time_selector.configure(state="disabled")
+            self.cam_settings_btn.configure(state="disabled"); self.update()
             print("Selected camera:", selected_camera)
             self.img_w = None; self.img_h = None  # put image WxH to the default values
             if not self.check_implementation(selected_camera):
@@ -605,8 +583,6 @@ class MainCtrlUI(base_class):
                     self.selected_camera.set(self.supported_cameras[0]); self.open_camera()
                 else:
                     self.active_camera = self.selected_camera.get()
-            self.snap_stream_btn.configure(state="normal"); self.snap_image_btn.configure(state="normal")
-            self.exp_time_selector.configure(state="normal")
 
     def check_implementation(self, selected_camera) -> bool:
         """
@@ -626,6 +602,23 @@ class MainCtrlUI(base_class):
         return selected_camera in cameras_ctrl_types
 
     # %% Utilities
+    def send_cmd2camera(self, command: Union[str, tuple]):
+        """
+        Send command to a camera and set trigger for letting camera class to read it and perform an action.
+
+        Parameters
+        ----------
+        command : Union[str, tuple]
+            Command as string or tuple(string command, parameter).
+
+        Returns
+        -------
+        None.
+
+        """
+        self.commands2camera.put_nowait(command); time.sleep(self.sleep_time_actions_ms/1.65)
+        self.trigger_commands.set(); time.sleep(self.sleep_time_actions_ms/1.65)
+
     def clean_queues_events(self):
         """
         Clean up queues and set Events to the default state.
@@ -715,8 +708,7 @@ class MainCtrlUI(base_class):
             self.snap_stream()  # simulates click on stop stream button
         if self.camera_opened:
             self.camera_status_label.config(text=self.camera_act_text, style=self.camera_init_status_style); self.update()
-            self.commands2camera.put_nowait("Stop"); time.sleep(self.sleep_time_actions_ms); self.trigger_commands.set()
-            trigger_set = self.trigger_camera_data.wait(4.0); time.sleep(self.sleep_time_actions_ms)
+            self.send_cmd2camera("Stop"); trigger_set = self.trigger_camera_data.wait(5.0); time.sleep(self.sleep_time_actions_ms)
             if trigger_set:
                 try:
                     received_data = self.data_from_camera.get_nowait()

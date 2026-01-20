@@ -10,6 +10,10 @@ import time
 import numpy as np
 from pathlib import Path
 import random
+from tkinter import Tk
+import platform
+import ctypes
+
 
 # %% Local imports
 if __name__ == "__main__" or __name__ == Path(__file__).stem or __name__ == "__mp_main__":
@@ -26,8 +30,14 @@ class SimulatedCamera(AbstractCamera):
     """Simulated camera with the noise simulation."""
 
     def __init__(self):
-        self.exp_t_ms = 50
-        print("Simulated Camera class initialized", flush=True); time.sleep(self.exp_t_ms/1000)
+        self.exposure_time = 50; self.camera_settings = {"Exposure Time": {"min": 1, "max": 2000}}
+        print("Simulated Camera class initialized", flush=True); time.sleep(self.exposure_time/1000)
+        if platform.system() == "Windows":
+            try:
+                ctypes.windll.shcore.SetProcessDpiAwareness(2)
+            except (FileNotFoundError, ModuleNotFoundError):
+                pass
+        self.root_tk = Tk(); self.camera_settings_win = None
 
     def camera_type() -> str:
         """
@@ -76,39 +86,22 @@ class SimulatedCamera(AbstractCamera):
 
         """
         exp_time_offset = random.randint(0, 3)  # random selection of integer offset
-        time.sleep((self.exp_t_ms + exp_time_offset)/1000)  # wait for an exposure time + some overhead
+        time.sleep((self.exposure_time + exp_time_offset)/1000)  # wait for an exposure time + some overhead
         return np.random.randint(0, high=255, size=(480, 640), dtype='uint8')
 
-    def set_exp_time(self, exp_t_ms: int) -> bool:
+    def access_camera_settings(self):
         """
-        Set exposure time in ms.
-
-        Parameters
-        ----------
-            Exposure time in ms.
+        Open external window with available camera controls.
 
         Returns
         -------
-        bool
-            If check is succesfull and exposure time is set.
+        None.
 
         """
-        if 0 < exp_t_ms <= 2000:
-            self.exp_t_ms = exp_t_ms; return True
+        if self.camera_settings_win is None:
+            pass
         else:
-            return False
-
-    def get_exp_time(self) -> int:
-        """
-        Get stored exposure time in ms.
-
-        Returns
-        -------
-        int
-            Exposure time in ms.
-
-        """
-        return self.exp_t_ms
+            pass
 
     def close(self):
         """
@@ -119,4 +112,6 @@ class SimulatedCamera(AbstractCamera):
         None.
 
         """
+        if self.root_tk is not None:
+            self.root_tk.destroy()
         time.sleep(0.008)

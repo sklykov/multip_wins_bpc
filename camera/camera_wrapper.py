@@ -85,7 +85,6 @@ class CameraWrapper(Process):
         self.sleep_time_actions_ms = 0.004  # for putting artificial delay between setting the trigger and sending the data
         self.record_flag = False  # flag for start recording streamed single snapped images
         self.fps = None  # will automatically measure and correct FPS (NOTE if there is direct control for setting exposure time)
-        self.exp_time_changed = False  # flag for checking if exp. time or camera FPS setting changed
         self.images2record = None  # placeholder for queue with images for recording
         self.video_file_path = None  # placeholder for a video file path used for recording
         # Checking input parameters
@@ -128,7 +127,6 @@ class CameraWrapper(Process):
                 camera_index = self.supported_cameras.index(self.camera_type)
                 self.camera_ref = cameras_ctrl_classes[camera_index]()  # initialize the camera controlling class
                 self.camera_initialized = self.camera_ref.initialize()  # explicit initialization method
-                # self.camera_initialized = True  # placeholder for the initialization of the camera
                 # Dev Note about putting time.sleep() below - if the scripts launched in Python debugger by Visual Studio Code
                 if self.camera_initialized:
                     self.data_queue.put_nowait("Initialized"); time.sleep(self.sleep_time_actions_ms); self.trigger_data.set()
@@ -168,27 +166,14 @@ class CameraWrapper(Process):
                                 image = np.array(pil_img)  # conversion PIL image to np.ndarray
                                 if not self.images2record.full():
                                     self.images2record.put_nowait(image)
-                            else:
-                                # if not self.exp_time_changed and passed_s > 0.0:
-                                #     if self.fps is None:
-                                #         self.fps = int(round(1.0/passed_s, 0))  # first estimation of FPS
-                                #     else:
-                                #         self.fps = int(round(0.5*(self.fps + round(1.0/passed_s, 0)), 0))  # averaging of estimated FPS
-                                #     # print("Measured FPS:", self.fps, flush=True)
-                                # elif self.exp_time_changed:  # acknowledge changed exposure time
-                                #     self.fps = None; self.exp_time_changed = False
-                                if self.exp_time_changed:
-                                    self.exp_time_changed = False
                             # print("Received image shape in Camera class:", image.shape, flush=True)
                             if image is not None:
                                 self.data_queue.put_nowait(image)
-                                # print("Camera sent image on Queue", flush=True)
                             else:
                                 self.data_queue.put_nowait("String placeholder Image")
                             self.trigger_data.set()  # set the trigger that the data is available for the calling main module
                         elif command == "Start Recording":
-                            self.record_flag = True
-                            self.images2record = thQueue(maxsize=20)
+                            self.record_flag = True; self.images2record = thQueue(maxsize=20)
                             self.record_thread = Thread(target=self.record); self.record_thread.start()
                             print("Start recording", flush=True)
                         elif command == "Stop Recording":
@@ -209,6 +194,8 @@ class CameraWrapper(Process):
                             else:
                                 self.data_queue.put_nowait(0)  # default value if FPS not measured
                             self.trigger_data.set()  # set the trigger that the data is available for the calling main module
+                        elif command == "Open Settings":
+                            self.camera_ref.access_camera_settings()
                         elif command == "Stop" or command == "Quit":
                             self.close()  # close the camera wrapper
                             self.initialized = False  # set the flag for the loop to stop it
@@ -216,19 +203,8 @@ class CameraWrapper(Process):
                     # Commands with parameters
                     elif isinstance(command, tuple):
                         (command_str, parameters) = command  # unpacking tuple
-                        # Set exposure time
-                        if command_str == "Set Exposure Time":
-                            exp_time_set = self.camera_ref.set_exp_time(int(parameters))
-                            if exp_time_set:
-                                exp_time = self.camera_ref.get_exp_time()
-                                self.exp_time_changed = True
-                                if isinstance(exp_time, int):
-                                    self.data_queue.put_nowait(exp_time); time.sleep(self.sleep_time_actions_ms); self.trigger_data.set()
-                            else:
-                                self.data_queue.put_nowait("Exposure Time NOT SET"); time.sleep(self.sleep_time_actions_ms)
-                                self.trigger_data.set()
-                        # Store measured on the main UI FPS
-                        elif command_str == "Measured FPS":
+                        # Show measured on the main UI FPS
+                        if command_str == "Measured FPS":
                             self.fps = int(parameters)  # set measured FPS
                     # Some reporting of not recognized commands
                     else:
@@ -273,10 +249,8 @@ class CameraWrapper(Process):
                         h, w, _ = image2record.shape
                         self.gray_scaled_img = False
                         image2record = cv2.cvtColor(image2record, cv2.COLOR_RGB2BGR)  # required back conversion for pyopencv
-                    self.video_writer = cv2.VideoWriter(self.video_file_path, self.cv2_codec,
-                                                        self.fps, (w, h))
-                    self.video_writer.write(image2record)
-                    first_step = False
+                    self.video_writer = cv2.VideoWriter(self.video_file_path, self.cv2_codec, self.fps, (w, h))
+                    self.video_writer.write(image2record); first_step = False
                 else:
                     if self.gray_scaled_img:
                         image2record = cv2.cvtColor(image2record, cv2.COLOR_GRAY2BGR)  # conversion from grayscale image to BGR format

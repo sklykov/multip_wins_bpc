@@ -7,7 +7,6 @@ Camera abstract class that should be inherited by the actual camera controlling 
 """
 # %% Global imports
 from abc import ABC, abstractmethod
-from typing import Union
 
 
 # %% Class def.
@@ -96,32 +95,13 @@ class AbstractCamera(ABC):
         return "Camera" in class_name  # returns True if the camera class name is valid (contains "Camera" in it)
 
     @abstractmethod
-    def set_exp_time(self, exp_t_ms: Union[float, int]) -> bool:
+    def access_camera_settings(self):
         """
-        Set exposure time on a camera.
-
-        Parameters
-        ----------
-        exp_t_ms : Union[float, int]
-            Exposure time to set (in any unit).
+        Open external window with controllable camera settings.
 
         Returns
         -------
-        bool
-            True if provided exposure time has been set.
-
-        """
-        pass
-
-    @abstractmethod
-    def get_exp_time(self) -> Union[float, int]:
-        """
-        Get assigned exposure time on a camera.
-
-        Returns
-        -------
-        Union[float, int]
-            Used exposure time.
+        None.
 
         """
         pass
