@@ -18,8 +18,8 @@ Main GUI script - visualization of images stream (based on tkinter GUI library).
 #       - requires exchanging all standard widgets to its counterparts;
 
 # %% Global imports
-from tkinter import Frame, Menu, Tk, font, LEFT, TOP, BOTH, StringVar, IntVar
-from tkinter.ttk import Button, Style, Label, OptionMenu, Spinbox
+from tkinter import Frame, Menu, Tk, font, LEFT, TOP, BOTH, StringVar
+from tkinter.ttk import Button, Style, Label, OptionMenu
 from tkinter.ttk import Frame as ttkFrame
 import platform
 import ctypes
@@ -65,14 +65,14 @@ else:
 # %% Local imports
 if __name__ == "__main__" or __name__ == Path(__file__).stem or __name__ == "__mp_main__":
     from containers.adjust_sizes_ctrls_win import AdjustSizesWin
-    from containers.spinbox_wrapper import SpinboxWrapper
+    # from containers.spinbox_wrapper import SpinboxWrapper
     from utils.utility_funcs import clean_mp_queue
     from camera.camera_wrapper import CameraWrapper, cameras_ctrl_types
 else:
     from .containers.adjust_sizes_ctrls_win import AdjustSizesWin
     from .utils.utility_funcs import clean_mp_queue
     from .camera.camera_wrapper import CameraWrapper, cameras_ctrl_types
-    from .containers.spinbox_wrapper import SpinboxWrapper
+    # from .containers.spinbox_wrapper import SpinboxWrapper
 
 # Switch on interactive behaviour of matplotlib only if it's not switched on
 if not plt.isinteractive():
@@ -190,18 +190,6 @@ class MainCtrlUI(base_class):
         self.widgets_styles.configure(self.record_stream_off_btn_style_name, foreground='#0025d0', background="#f0f1fb")
         self.record_stream_btn = Button(master=self.buttons_frame, text=self.record_stream_on_text, command=self.record_stream,
                                         style=self.record_stream_on_btn_style_name)
-
-        # Exposure time control as Spinbox
-        self.exp_time_sel_frame = Frame(master=self.buttons_frame)
-        self.exp_time_label = Label(master=self.exp_time_sel_frame, text="Exp. Time (ms): ")
-        self.exp_time_value = IntVar(); self.exp_time_value.set(self.exp_time_ms)
-        self.exp_time_selector = Spinbox(master=self.exp_time_sel_frame, from_=self.min_exp_time_ms, to=self.max_exp_time_ms,
-                                         increment=1, width=5, textvariable=self.exp_time_value, command=self.set_exp_time)
-        self.exp_time_selector_wr = SpinboxWrapper(self.exp_time_selector, self.exp_time_value, self.min_exp_time_ms,
-                                                   self.max_exp_time_ms, n_digit_points=0)
-        self.exp_time_label.pack(side=LEFT, padx=self.padx//2, pady=self.pady//2)
-        self.exp_time_selector.pack(side=LEFT, padx=self.padx//2, pady=self.pady//2)
-        self.exp_time_selector.bind('<Return>', self.set_exp_time); self.exp_time_selector.bind('<FocusOut>', self.set_exp_time)
 
         # Special camera action btn (can be extended and reused for special settings)
         self.cam_settings_btn_style = 'CameraProps.TButton'; self.widgets_styles.configure(self.cam_settings_btn_style, foreground='#ac0f0f')
@@ -434,10 +422,7 @@ class MainCtrlUI(base_class):
                 self.pause_snaps_stream = False
                 self.snaps_stream_task = self.after(4, self.run_snap_stream)  # resume the live stream
 
-    # %% Camera settings
-    def set_exp_time(self, *args):
-        pass
-
+    # %% Camera inquires
     def query_fps(self):
         """
         Get the measured FPS from a camera wrapper.

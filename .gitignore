@@ -6,6 +6,7 @@ Documents/
 *.docx
 *.odt
 *.txt
+!Dev_Notes.txt
 *.rtf
 *.jpg
 *.jpeg

@@ -1,0 +1,2 @@
+21-01-2026
+As for now, pyopencv isn't compatible with Python 3.14, avoid such environments

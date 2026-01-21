@@ -18,8 +18,10 @@ import ctypes
 # %% Local imports
 if __name__ == "__main__" or __name__ == Path(__file__).stem or __name__ == "__mp_main__":
     from abstract_camera import AbstractCamera
+    from simulated_settings import SimulatedSettings
 else:
     from .abstract_camera import AbstractCamera
+    from .simulated_settings import SimulatedSettings
 
 # %% Auto exports
 __all__ = ['SimulatedCamera']
@@ -99,7 +101,7 @@ class SimulatedCamera(AbstractCamera):
 
         """
         if self.camera_settings_win is None:
-            pass
+            self.camera_settings_win = SimulatedSettings(self.root_tk, self); self.camera_settings_win.mainloop()
         else:
             pass
 
@@ -113,5 +115,8 @@ class SimulatedCamera(AbstractCamera):
 
         """
         if self.root_tk is not None:
-            self.root_tk.destroy()
+            try:
+                self.root_tk.destroy()
+            except Exception:
+                del self.root_tk
         time.sleep(0.008)
