@@ -10,18 +10,13 @@ import time
 import numpy as np
 from pathlib import Path
 import random
-from tkinter import Tk
-import platform
-import ctypes
 
 
 # %% Local imports
 if __name__ == "__main__" or __name__ == Path(__file__).stem or __name__ == "__mp_main__":
     from abstract_camera import AbstractCamera
-    from simulated_settings import SimulatedSettings
 else:
     from .abstract_camera import AbstractCamera
-    from .simulated_settings import SimulatedSettings
 
 # %% Auto exports
 __all__ = ['SimulatedCamera']
@@ -31,15 +26,14 @@ __all__ = ['SimulatedCamera']
 class SimulatedCamera(AbstractCamera):
     """Simulated camera with the noise simulation."""
 
+    available_camera_settings : dict = {"Exposure Time": {"min": 1, "max": 2000, "type": int, "current": 50, "unit": "ms", "step": 1},
+                                        "Max Acq. Random Delay": {"min": 0, "max": 11, "type": int, "current": 3, "unit": "ms", "step": 1}}
+
     def __init__(self):
-        self.exposure_time = 50; self.camera_settings = {"Exposure Time": {"min": 1, "max": 2000}}
+        self.exposure_time = self.available_camera_settings["Exposure Time"]["current"]
+        self.acq_random_delay = self.available_camera_settings["Max Acq. Random Delay"]["current"]
+        self.lock_camera_settings = False  # flag for locking camera settings
         print("Simulated Camera class initialized", flush=True); time.sleep(self.exposure_time/1000)
-        if platform.system() == "Windows":
-            try:
-                ctypes.windll.shcore.SetProcessDpiAwareness(2)
-            except (FileNotFoundError, ModuleNotFoundError):
-                pass
-        self.root_tk = Tk(); self.camera_settings_win = None
 
     def camera_type() -> str:
         """
@@ -52,6 +46,18 @@ class SimulatedCamera(AbstractCamera):
 
         """
         return "Simulated"
+
+    def camera_settings(cls) -> dict:
+        """
+        Return controllable camera parameters.
+
+        Returns
+        -------
+        dict
+            DESCRIPTION.
+
+        """
+        return cls.available_camera_settings
 
     def initialize(self) -> bool:
         """
@@ -87,23 +93,36 @@ class SimulatedCamera(AbstractCamera):
             2D matrix as the image.
 
         """
-        exp_time_offset = random.randint(0, 3)  # random selection of integer offset
+        exp_time_offset = random.randint(0, self.acq_random_delay)  # random selection of integer delay for acquisition
         time.sleep((self.exposure_time + exp_time_offset)/1000)  # wait for an exposure time + some overhead
         return np.random.randint(0, high=255, size=(480, 640), dtype='uint8')
 
     def access_camera_settings(self):
         """
-        Open external window with available camera controls.
+        Wrap a method, controlling lift off for the window managed from the main window.
 
         Returns
         -------
         None.
 
         """
-        if self.camera_settings_win is None:
-            self.camera_settings_win = SimulatedSettings(self.root_tk, self); self.camera_settings_win.mainloop()
-        else:
-            pass
+        pass
+
+    def lock_unlock_settings(self, lock_state: bool):
+        """
+        Lock and unlock controlling buttons.
+
+        Parameters
+        ----------
+        lock_state : bool
+            If True, settings buttons should be locked.
+
+        Returns
+        -------
+        None.
+
+        """
+        self.lock_camera_settings = lock_state
 
     def close(self):
         """
@@ -114,9 +133,4 @@ class SimulatedCamera(AbstractCamera):
         None.
 
         """
-        if self.root_tk is not None:
-            try:
-                self.root_tk.destroy()
-            except Exception:
-                del self.root_tk
         time.sleep(0.008)

@@ -251,6 +251,8 @@ class MainCtrlUI(base_class):
                     if self.data_from_camera.get_nowait() == "Initialized":
                         print(f"{self.selected_camera.get()} Camera Opened", flush=True); self.camera_opened = True
                         self.camera_status_label.config(text=self.camera_act_text, style=self.camera_init_status_style)
+                        self.camera_settings = self.camera_process.camera_settings
+                        print("Controllable camera parameters:", self.camera_settings, flush=True)
                         # Enable default snap button
                         self.snap_stream_btn.configure(state="normal"); self.snap_image_btn.configure(state="normal")
                         self.cam_settings_btn.configure(state="normal"); self.update()
@@ -292,7 +294,7 @@ class MainCtrlUI(base_class):
                         if self.fps == 0:
                             self.fps = int(round(1.0/passed_s, 0))  # first estimation of FPS
                             self.fps_label.config(text=f"Measured FPS: {self.fps}")  # 1st estimation
-                            self.after(5, self.set_fps)  # send measured FPS to a camera ctrl module
+                            self.after(5, self.send_fps_to_camera_wrapper)  # send measured FPS to a camera ctrl module
                             self.index_fps_buffer = 0  # set to the default value
                             self.ring_fps_buffer[self.index_fps_buffer] = self.fps; self.index_fps_buffer += 1
                         else:
@@ -304,7 +306,7 @@ class MainCtrlUI(base_class):
                                 self.fps = int(round((np.mean(self.ring_fps_buffer)), 0)); self.index_fps_buffer = 0
                         if self.acquired_images % 5 == 0:  # update FPS label each 5 fresh images
                             self.fps_label.config(text=f"Measured FPS: {self.fps}")
-                            self.after(5, self.set_fps)  # send measured FPS to a camera ctrl module
+                            self.after(5, self.send_fps_to_camera_wrapper)  # send measured FPS to a camera ctrl module
                         # Adjust overhead for showing image query
                         if self.fps < 10:
                             self.fast_fps_overhead = 0
@@ -351,6 +353,7 @@ class MainCtrlUI(base_class):
             self.snap_stream_btn.configure(style=self.snap_stream_off_btn_style_name, text=self.snap_stream_off_text)
             if self.snaps_stream_task is None:
                 self.pause_snaps_stream = False  # set not to pause repeating assigning the tasks
+                self.send_cmd2camera("Start Snap Stream")
                 self.snaps_stream_task = self.after(15, self.run_snap_stream)
             self.menubar.delete(0, "end")  # delete all entries in menu, effectively hide all menu entries
             self.master.resizable(False, False); self.windows_resizable = False  # make window not resizable forcibly
@@ -367,6 +370,7 @@ class MainCtrlUI(base_class):
                 self.after_cancel(self.show_image_task); time.sleep(self.sleep_time_actions_ms); self.show_image_task = None
             self.snap_image_btn.config(state="normal"); self.record_stream_btn.configure(state="disabled")
             self.fast_fps_overhead = 0  # back to the default value
+            self.send_cmd2camera("Stop Snap Stream")
             # Enable labels in Settings menu
             for label in self.labels_actions_menu:
                 self.actions_menu.entryconfig(label, state="normal")
@@ -451,7 +455,7 @@ class MainCtrlUI(base_class):
             self.fps = 0; self.fps_label.config(text=f"Measured FPS: {self.fps}")
         self.update()
 
-    def set_fps(self):
+    def send_fps_to_camera_wrapper(self):
         """
         Send measured actual FPS for storing it in camera_wrapper module and use it for recording.
 

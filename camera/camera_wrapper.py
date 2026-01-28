@@ -29,6 +29,7 @@ cameras_cls_names = [camera_class for camera_class in local_modules.keys() if "C
 # Collect actual classes for using them below on UI
 cameras_ctrl_classes = [local_modules[camera_name] for camera_name in cameras_cls_names]
 cameras_ctrl_types = [ctrl_class.camera_type() for ctrl_class in cameras_ctrl_classes]
+cameras_settings = [ctrl_class.camera_settings(ctrl_class) for ctrl_class in cameras_ctrl_classes]
 
 
 # %% Camera class
@@ -99,6 +100,7 @@ class CameraWrapper(Process):
         print("Supported cameras:", cameras_ctrl_types, flush=True)
         if camera_type in self.supported_cameras:
             self.camera_type = camera_type; self.camera_supported = True
+            self.camera_settings = cameras_settings[self.supported_cameras.index(self.camera_type)]
         # Checking provided parameters to be consistent and empty
         if self.commands_queue.empty() and self.data_queue.empty() and not self.trigger_data.is_set() and not self.trigger_commands.is_set():
             if self.camera_supported:
@@ -195,7 +197,7 @@ class CameraWrapper(Process):
                                 self.data_queue.put_nowait(0)  # default value if FPS not measured
                             self.trigger_data.set()  # set the trigger that the data is available for the calling main module
                         elif command == "Open Settings":
-                            self.camera_ref.access_camera_settings()
+                            self.camera_ref.access_camera_settings()  # call native method for assign camera settings
                         elif command == "Stop" or command == "Quit":
                             self.close()  # close the camera wrapper
                             self.initialized = False  # set the flag for the loop to stop it
@@ -203,9 +205,9 @@ class CameraWrapper(Process):
                     # Commands with parameters
                     elif isinstance(command, tuple):
                         (command_str, parameters) = command  # unpacking tuple
-                        # Show measured on the main UI FPS
+                        # FPS measured on the main UI set here, it's not for controlling it
                         if command_str == "Measured FPS":
-                            self.fps = int(parameters)  # set measured FPS
+                            self.fps = int(parameters)  # saved measured FPS
                     # Some reporting of not recognized commands
                     else:
                         print("Camera received NOT RECOGNIZED command:", command, flush=True)

@@ -97,11 +97,42 @@ class AbstractCamera(ABC):
     @abstractmethod
     def access_camera_settings(self):
         """
-        Open external window with controllable camera settings.
+        Open external window with controllable camera settings (available for a OpenCV wrapper for an embedded camera).
 
         Returns
         -------
         None.
+
+        """
+        pass
+
+    @abstractmethod
+    def lock_unlock_settings(self, lock_state: bool):
+        """
+        Lock and unlock settings buttons.
+
+        Parameters
+        ----------
+        lock_state : bool
+            If True, all settings will be ignored and not set.
+
+        Returns
+        -------
+        None.
+
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def camera_settings(cls) -> dict:
+        """
+        Should be implemented by each camera for providing a dict for set camera parameters available.
+
+        Returns
+        -------
+        dict
+            Stored camera settings which could be accessed and set.
 
         """
         pass

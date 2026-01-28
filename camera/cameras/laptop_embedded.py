@@ -36,9 +36,11 @@ __all__ = ['EmbeddedLaptopCamera']
 class EmbeddedLaptopCamera(AbstractCamera):
     """Embedded in Laptop camera control."""
 
+    available_camera_settings : dict = {}  # placeholder for a compatibility, all settings controlled through external window
+
     def __init__(self):
         self.camera_index = 0  # default camera index
-        self.camera_handle = None; self.exp_t_changeable = False
+        self.camera_handle = None; self.exp_t_changeable = False; self.lock_camera_settings = False
         self.exp_t_ms = 0; self.img_width = 0; self.img_height = 0
         self.camera_report = ""  # default - empty report (no problems)
         self.platform = str(platform.system()).lower()
@@ -63,6 +65,18 @@ class EmbeddedLaptopCamera(AbstractCamera):
 
         """
         return "Laptop_Emb"
+
+    def camera_settings(cls) -> dict:
+        """
+        Return controllable camera parameters.
+
+        Returns
+        -------
+        dict
+            DESCRIPTION.
+
+        """
+        return cls.available_camera_settings
 
     def initialize(self) -> bool:
         """
@@ -126,7 +140,8 @@ class EmbeddedLaptopCamera(AbstractCamera):
         None.
 
         """
-        self.camera_handle.set(cv2.CAP_PROP_SETTINGS, 1)  # open external window with all available settings
+        if not self.lock_camera_settings:
+            self.camera_handle.set(cv2.CAP_PROP_SETTINGS, 1)  # open external window with all available settings
 
     def set_and_report_prop(self, prop: int, value: float) -> Union[float, None]:
         """
@@ -149,6 +164,22 @@ class EmbeddedLaptopCamera(AbstractCamera):
             self.camera_handle.set(prop, value)
             return self.camera_handle.get(prop)
         return None
+
+    def lock_unlock_settings(self, lock_state: bool):
+        """
+        Lock and unlock possibility to open an external window with settings.
+
+        Parameters
+        ----------
+        lock_state : bool
+            If True, no settings window will be opened.
+
+        Returns
+        -------
+        None.
+
+        """
+        self.lock_camera_settings = lock_state
 
     def close(self):
         """
