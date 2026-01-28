@@ -205,7 +205,7 @@ class CameraWrapper(Process):
                     # Commands with parameters
                     elif isinstance(command, tuple):
                         (command_str, parameters) = command  # unpacking tuple
-                        # FPS measured on the main UI set here, it's not for controlling it
+                        # FPS measured on the main UI set here, it's not for controlling it but for providing it to a camera class
                         if command_str == "Measured FPS":
                             self.fps = int(parameters)  # saved measured FPS
                     # Some reporting of not recognized commands

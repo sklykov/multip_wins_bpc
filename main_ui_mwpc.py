@@ -252,7 +252,11 @@ class MainCtrlUI(base_class):
                         print(f"{self.selected_camera.get()} Camera Opened", flush=True); self.camera_opened = True
                         self.camera_status_label.config(text=self.camera_act_text, style=self.camera_init_status_style)
                         self.camera_settings = self.camera_process.camera_settings
-                        print("Controllable camera parameters:", self.camera_settings, flush=True)
+                        if len(self.camera_settings.keys()) > 0:
+                            print(f"Controllable {self.selected_camera.get()} Camera Parameters:", list(self.camera_settings.keys()),
+                                  flush=True)
+                        else:
+                            print(f"{self.selected_camera.get()} Camera Parameters are accessible on the separate GUI", flush=True)
                         # Enable default snap button
                         self.snap_stream_btn.configure(state="normal"); self.snap_image_btn.configure(state="normal")
                         self.cam_settings_btn.configure(state="normal"); self.update()
@@ -475,7 +479,8 @@ class MainCtrlUI(base_class):
         None.
 
         """
-        self.send_cmd2camera("Open Settings")  # only direct way of communication - open only (ignore if opened)
+        if len(self.camera_settings.keys()) == 0:
+            self.send_cmd2camera("Open Settings")  # call special method to open some native camera settings controlling window (OpenCV)
 
     # %% Show acquired image
     def show_image(self):
