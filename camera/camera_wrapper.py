@@ -197,7 +197,7 @@ class CameraWrapper(Process):
                                 self.data_queue.put_nowait(0)  # default value if FPS not measured
                             self.trigger_data.set()  # set the trigger that the data is available for the calling main module
                         elif command == "Open Settings":
-                            self.camera_ref.access_camera_settings()  # call native method for assign camera settings
+                            self.camera_ref.access_camera_settings()  # call native method for adjusting camera settings (OpenCV)
                         elif command == "Stop" or command == "Quit":
                             self.close()  # close the camera wrapper
                             self.initialized = False  # set the flag for the loop to stop it
@@ -262,8 +262,7 @@ class CameraWrapper(Process):
                 time.sleep(self.sleep_time_actions_ms)
         if not self.record_flag:
             self.video_writer.release()  # close a file
-            self.video_file_path = None  # back to a default value
-            print("Stop recording Thread", flush=True)
+            self.video_file_path = None; print("Stop recording Thread", flush=True)
 
     # %% Utility methods
     def close(self):

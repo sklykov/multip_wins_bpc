@@ -107,11 +107,9 @@ class MainCtrlUI(base_class):
         self.menu_font = font.nametofont("TkMenuFont"); self.menu_font_size = self.menu_font.cget("size")
         self.main_font_size = self.main_font.cget("size"); self.entry_font_size = self.entry_font.cget("size")
         if self.main_font_size <= 9:
-            self.main_font.config(size=self.main_font.cget("size") + 1)  # increase by 1 default font size
-            self.main_font_size += 1
+            self.main_font.config(size=self.main_font.cget("size") + 1); self.main_font_size += 1
         if self.entry_font_size <= 9:
-            self.entry_font.config(size=self.entry_font.cget("size") + 1)  # increase by 1 default font size
-            self.entry_font_size += 1
+            self.entry_font.config(size=self.entry_font.cget("size") + 1); self.entry_font_size += 1
 
         # Default values of variables used in the methods
         self.adjust_sizes_win = None; self.windows_resizable = False
@@ -131,17 +129,16 @@ class MainCtrlUI(base_class):
         self.image_figure = pltFigure.Figure(figsize=(self.figure_size_w, self.figure_size_h))  # empty figure with default sizes (WxH)
         self.image_canvas = FigureCanvasTkAgg(self.image_figure, master=self); self.plot_widget = self.image_canvas.get_tk_widget()
         self.current_image = None; self.snap_image_obtained = False; self.image_figure_axes = None; self.display_image = False
-        self.img_h = None; self.img_w = None
+        self.img_h = None; self.img_w = None; self.imshowing = None  # AxesImage instance
         # Assign subplot to the created figure
         if self.image_figure_axes is None:
             self.image_figure_axes = self.image_figure.add_subplot(); self.image_figure_axes.axis('off'); self.image_figure.tight_layout()
             self.image_figure.subplots_adjust(left=0, bottom=0, right=1, top=1)  # remove white borders
             # self.image_figure_axes.format_coord = self.format_coord
             self.image_figure_axes.format_cursor_data = lambda: ''  # remove pixel value in [...] on a widget
-        self.imshowing = None  # AxesImage instance
 
         # Program parameters, variables
-        self.snaps_stream_flag = False; self.snaps_stream_task = None; self.record_flag = False
+        self.snaps_stream_flag = False; self.snaps_stream_task = None; self.record_flag = False; self.block_btns_flag = False
         self.retain_resizable_flag = False; self.show_image_task = None; self.fast_fps_overhead = 0
         self.fps_snaps_stream = 0; self.ring_fps_buffer = np.zeros((5, )); self.index_fps_buffer = 0
 
@@ -219,8 +216,7 @@ class MainCtrlUI(base_class):
         self.trigger_commands = Event(); self.trigger_camera_data = Event()  # note that Event wraps condition and lock together
 
         # Disabling some buttons at the start
-        self.snap_stream_btn.configure(state="disabled"); self.snap_image_btn.configure(state="disabled")
-        self.record_stream_btn.configure(state="disabled"); self.cam_settings_btn.configure(state="disabled")
+        self.record_stream_btn.configure(state="disabled"); self.lock_ui_btns()
 
         # Open Simulated camera as a default
         self.open_camera()
@@ -257,9 +253,7 @@ class MainCtrlUI(base_class):
                                   flush=True)
                         else:
                             print(f"{self.selected_camera.get()} Camera Parameters are accessible on the separate GUI", flush=True)
-                        # Enable default snap button
-                        self.snap_stream_btn.configure(state="normal"); self.snap_image_btn.configure(state="normal")
-                        self.cam_settings_btn.configure(state="normal"); self.update()
+                        self.unlock_ui_btns()
                     elif self.data_from_camera.get_nowait() == "NOT Initialized":
                         print(f"{self.selected_camera.get()} Camera Opened", flush=True); self.camera_opened = False
                         self.camera_status_label.config(text=self.camera_inact_text, style=self.camera_error_status_style)
@@ -311,7 +305,7 @@ class MainCtrlUI(base_class):
                         if self.acquired_images % 5 == 0:  # update FPS label each 5 fresh images
                             self.fps_label.config(text=f"Measured FPS: {self.fps}")
                             self.after(5, self.send_fps_to_camera_wrapper)  # send measured FPS to a camera ctrl module
-                        # Adjust overhead for showing image query
+                        # Adjust overhead for showing image query - for keeping UI responsive
                         if self.fps < 10:
                             self.fast_fps_overhead = 0
                         elif self.fps >= 10:
@@ -347,10 +341,8 @@ class MainCtrlUI(base_class):
         """
         self.snaps_stream_flag = not self.snaps_stream_flag  # change the flag
         if self.snaps_stream_flag:
-            self.snap_image_btn.config(state="disabled")  # disable the single snap button
-            self.record_stream_btn.configure(state="normal"); self.cam_settings_btn.configure(state="disabled")
+            self.record_stream_btn.configure(state="normal"); self.lock_ui_btns()
             self.retain_resizable_flag = self.windows_resizable  # save the previously stored value
-            self.camera_selector.config(state="disabled")
             # Disable labels in Settings menu
             for label in self.labels_actions_menu:
                 self.actions_menu.entryconfig(label, state="disabled")
@@ -362,7 +354,6 @@ class MainCtrlUI(base_class):
             self.menubar.delete(0, "end")  # delete all entries in menu, effectively hide all menu entries
             self.master.resizable(False, False); self.windows_resizable = False  # make window not resizable forcibly
             self.master.wm_overrideredirect(True)  # prevent moving window around, making the UI more stable
-            self.focus_force()
         else:
             if self.record_flag:
                 self.record_stream()
@@ -372,19 +363,17 @@ class MainCtrlUI(base_class):
                 self.after_cancel(self.snaps_stream_task); time.sleep(self.sleep_time_actions_ms); self.snaps_stream_task = None
             if self.show_image_task is not None:
                 self.after_cancel(self.show_image_task); time.sleep(self.sleep_time_actions_ms); self.show_image_task = None
-            self.snap_image_btn.config(state="normal"); self.record_stream_btn.configure(state="disabled")
-            self.fast_fps_overhead = 0  # back to the default value
+            self.record_stream_btn.configure(state="disabled"); self.fast_fps_overhead = 0  # back to the default value
             self.send_cmd2camera("Stop Snap Stream")
             # Enable labels in Settings menu
             for label in self.labels_actions_menu:
                 self.actions_menu.entryconfig(label, state="normal")
             self.snap_stream_btn.configure(style=self.snap_stream_on_btn_style_name, text=self.snap_stream_on_text)
-            self.cam_settings_btn.configure(state="normal"); self.camera_selector.config(state="normal")
-            self.master.resizable(self.retain_resizable_flag, self.retain_resizable_flag)
+            self.unlock_ui_btns(); self.master.resizable(self.retain_resizable_flag, self.retain_resizable_flag)
             self.windows_resizable = self.retain_resizable_flag  # make window resizable
             self.master.wm_overrideredirect(False)   # restore moving window around
             self.menubar.add_cascade(label="Settings", menu=self.actions_menu)  # restore menubar with adjust size option
-            self.focus_force()
+        self.focus_force()
 
     def run_snap_stream(self):
         """
@@ -418,17 +407,14 @@ class MainCtrlUI(base_class):
             self.send_cmd2camera("Start Recording")
             self.record_stream_btn.configure(style=self.record_stream_off_btn_style_name, text=self.record_stream_off_text)
             if self.snaps_stream_flag:
-                self.pause_snaps_stream = False
-                self.snaps_stream_task = self.after(4, self.run_snap_stream)  # resume the live stream
+                self.pause_snaps_stream = False; self.snaps_stream_task = self.after(4, self.run_snap_stream)  # resume the live stream
         else:
             if self.snaps_stream_flag and self.snaps_stream_task is not None:
-                self.pause_snaps_stream = True
-                self.after_cancel(self.snaps_stream_task)  # make a pause in the live stream
+                self.pause_snaps_stream = True; self.after_cancel(self.snaps_stream_task)  # make a pause in the live stream
             self.send_cmd2camera("Stop Recording")
             self.record_stream_btn.configure(style=self.record_stream_on_btn_style_name, text=self.record_stream_on_text)
             if self.snaps_stream_flag:
-                self.pause_snaps_stream = False
-                self.snaps_stream_task = self.after(4, self.run_snap_stream)  # resume the live stream
+                self.pause_snaps_stream = False; self.snaps_stream_task = self.after(4, self.run_snap_stream)  # resume the live stream
 
     # %% Camera inquires
     def query_fps(self):
@@ -533,11 +519,10 @@ class MainCtrlUI(base_class):
                         self.imshowing = self.image_figure_axes.imshow(self.current_image)
                     # self.imshowing.format_cursor_data = self.cursor_wrapper  # remove pixel value in [...] on a widget
                     self.imshowing.set_data(self.current_image)  # set data for AxesImage for updating image content
-                    self.image_canvas.draw_idle()
                 else:
                     self.imshowing.set_data(self.current_image)  # set data for AxesImage for updating image content
                     self.imshowing.set_clim(vmin=self.min_pixel_value, vmax=self.max_pixel_value)
-                    self.image_canvas.draw_idle()
+                self.image_canvas.draw_idle()  # schedule only update, more responsive
                 # assuming that image intensities are integer values (float image is [0, 1] range of pixel values)
                 if isinstance(self.max_pixel_value, float) and self.max_pixel_value > 1.1:
                     self.max_pixel_value = int(np.round(self.max_pixel_value, 0))
@@ -560,17 +545,14 @@ class MainCtrlUI(base_class):
 
         """
         if not selected_camera == self.active_camera:  # check that other than the current active camera selected
-            self.snap_stream_btn.configure(state="disabled"); self.snap_image_btn.configure(state="disabled")
-            self.cam_settings_btn.configure(state="disabled"); self.update()
-            print("Selected camera:", selected_camera)
+            self.lock_ui_btns(); print("Selected camera:", selected_camera, flush=True)
             self.img_w = None; self.img_h = None  # put image WxH to the default values
             if not self.check_implementation(selected_camera):
                 print(f"The required implementation for the '{selected_camera}' camera not found. \nThe previously active camera remained")
                 self.selected_camera.set(self.active_camera)  # set back the active camera and open it
             else:
-                self.close_camera()  # closing the currently active camera
-                self.clean_queues_events()  # cleaning the queues for reconnecting to the new instance of a Camera class
-                self.open_camera()
+                # below - close + clean logic and after reinitialize everything
+                self.close_camera(); self.clean_queues_events(); self.open_camera()
                 if not self.camera_opened:
                     print("Camera not opened, going back to the Simulated", flush=True)
                     self.close_camera(); self.clean_queues_events()
@@ -626,6 +608,30 @@ class MainCtrlUI(base_class):
         self.commands2camera = clean_mp_queue(self.commands2camera)
         self.trigger_commands.clear(); self.trigger_camera_data.clear()
 
+    def lock_ui_btns(self):
+        """
+        Lock common UI buttons.
+
+        Returns
+        -------
+        None.
+
+        """
+        self.snap_image_btn.config(state="disabled"); self.camera_selector.config(state="disabled")
+        self.cam_settings_btn.configure(state="disabled"); self.update(); self.block_btns_flag = True
+
+    def unlock_ui_btns(self):
+        """
+        Unlock common UI buttons.
+
+        Returns
+        -------
+        None.
+
+        """
+        self.snap_image_btn.config(state="normal"); self.camera_selector.config(state="normal")
+        self.cam_settings_btn.configure(state="normal"); self.update(); self.block_btns_flag = False
+
     # %% Adjusting GUI
     def adjust_sizes(self):
         """
@@ -641,7 +647,6 @@ class MainCtrlUI(base_class):
         else:
             if self.adjust_sizes_win.winfo_exists():
                 self.adjust_sizes_win.after(15, self.adjust_sizes_win.destroy); time.sleep(25/1000); self.adjust_sizes_win = None
-                # self.adjust_sizes_win.destroy(); self.adjust_sizes_win = None
             else:
                 self.adjust_sizes_win = AdjustSizesWin(master_widget=self, windows_resizable=self.windows_resizable)
 
@@ -733,8 +738,8 @@ class MainCtrlUI(base_class):
         """
         self.close_camera()  # close of a camera logic
         if self.camera_process.is_alive():  # for fallback logic
-            print("CameraWrapper Process is still alive, check the closing logic in it."); self.camera_process.join(0.2)
-            self.camera_process.kill()
+            print("CameraWrapper Process is still alive, check the closing logic in it.", flush=True)
+            self.camera_process.join(0.2); self.camera_process.kill()
         self.data_from_camera = clean_mp_queue(self.data_from_camera); self.data_from_camera.close()  # cleaning the queue
         self.commands2camera = clean_mp_queue(self.commands2camera); self.commands2camera.close()
 
@@ -744,8 +749,7 @@ class WrapperMainUI():
     """Wrapper for main GUI Frame."""
 
     def __init__(self, test_ttkbootstrap: bool = False, test_customtkinter: bool = False):
-        print(__start_message__)
-        self.custom_tkinter = False  # default flag for testing customtkinter
+        print(__start_message__, flush=True); self.custom_tkinter = False  # default flag for testing customtkinter
         if test_ttkbootstrap:
             # Print out Note for launching in a IPython console
             for frame in inspect.stack():
@@ -754,8 +758,7 @@ class WrapperMainUI():
             from ttkbootstrap import Window
             self.tk_root = Window(themename="solar")
         elif test_customtkinter:
-            self.tk_root = CTk()
-            self.custom_tkinter = True
+            self.tk_root = CTk(); self.custom_tkinter = True
         else:
             WrapperMainUI.fix_blurring()  # fix blurring of UIs
             self.tk_root = Tk()  # main tkinter class, toplevel window
@@ -778,8 +781,7 @@ class WrapperMainUI():
         while self.mainUI._relaunch and not ttkbootstrap_installed:  # relaunch the main GUI window, if some showing settings changed
             dpi_changed = self.mainUI._changed_dpi
             self.tk_root = Tk()  # reinitialize main GUI class
-            # initialize again GUI based on Frame()
-            self.mainUI = MainCtrlUI(master=self.tk_root, changed_dpi=dpi_changed); self.mainUI.mainloop()
+            self.mainUI = MainCtrlUI(master=self.tk_root, changed_dpi=dpi_changed); self.mainUI.mainloop()  # reinitialize UI based on Frame()
 
     @staticmethod
     def fix_blurring():

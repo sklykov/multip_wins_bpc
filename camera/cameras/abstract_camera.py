@@ -109,7 +109,7 @@ class AbstractCamera(ABC):
     @abstractmethod
     def lock_unlock_settings(self, lock_state: bool):
         """
-        Lock and unlock settings buttons.
+        Abstract method for locking / unlocking explicitly if any settings can be set.
 
         Parameters
         ----------

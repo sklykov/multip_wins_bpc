@@ -32,7 +32,7 @@ class SimulatedCamera(AbstractCamera):
     def __init__(self):
         self.exposure_time = self.available_camera_settings["Exposure Time"]["current"]
         self.acq_random_delay = self.available_camera_settings["Max Acq. Random Delay"]["current"]
-        self.lock_camera_settings = False  # flag for locking camera settings
+        self.lock_camera_settings = False  # flag for locking possibility to set anything
         print("Simulated Camera class initialized", flush=True); time.sleep(self.exposure_time/1000)
 
     def camera_type() -> str:
@@ -54,7 +54,7 @@ class SimulatedCamera(AbstractCamera):
         Returns
         -------
         dict
-            DESCRIPTION.
+            Dictionary with available camera settings controls along with min / max range.
 
         """
         return cls.available_camera_settings
@@ -68,8 +68,7 @@ class SimulatedCamera(AbstractCamera):
         None.
 
         """
-        time.sleep(0.005)
-        return True
+        time.sleep(0.005); return True
 
     def initialization_status(self) -> str:
         """
@@ -110,12 +109,12 @@ class SimulatedCamera(AbstractCamera):
 
     def lock_unlock_settings(self, lock_state: bool):
         """
-        Lock and unlock controlling buttons.
+        Set lock / unlock state explicitly.
 
         Parameters
         ----------
         lock_state : bool
-            If True, settings buttons should be locked.
+            Automatic.
 
         Returns
         -------

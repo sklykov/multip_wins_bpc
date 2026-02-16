@@ -23,9 +23,8 @@ class CamSettings(Frame):
 
         # TODO: implement
         super().__init__(master)  # initialize the Frame - container for all controls below
-        self.padx = 4; self.pady = 4
-        self.focus_set()  # switch focus to the Frame, working if launched from Python console
-        self.master.title("Camera Settings")
+        self.padx = 4; self.pady = 4; self.focus_set() # working if launched from Python console
+        self.focus_force(); self.master.title("Camera Settings")
 
         # Exposure time control as Spinbox
         self.exp_time_sel_frame = Frame(master=self)
@@ -77,7 +76,7 @@ class CamSettings(Frame):
         None.
 
         """
-        if self.camera_ctrl_cls.lock_camera_settings:
+        if self.master.block_btns_flag:
             self.exp_time_selector.config(state="disabled")
         else:
             self.exp_time_selector.config(state="normal")
