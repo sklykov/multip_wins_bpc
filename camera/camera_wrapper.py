@@ -17,6 +17,7 @@ from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 import cv2
+import traceback
 
 # %% Local imports
 if __name__ == "__main__" or __name__ == Path(__file__).stem or __name__ == "__mp_main__":
@@ -202,15 +203,27 @@ class CameraWrapper(Process):
                             self.close()  # close the camera wrapper
                             self.initialized = False  # set the flag for the loop to stop it
                             self.data_queue.put_nowait("Stopped"); time.sleep(self.sleep_time_actions_ms); self.trigger_data.set()
+                        else:
+                            print("Camera NOT RECOGNIZED the command:", command, flush=True)
                     # Commands with parameters
                     elif isinstance(command, tuple):
                         (command_str, parameters) = command  # unpacking tuple
                         # FPS measured on the main UI set here, it's not for controlling it but for providing it to a camera class
                         if command_str == "Measured FPS":
                             self.fps = int(parameters)  # saved measured FPS
+                        elif command_str == "Set Exposure Time":
+                            if callable(getattr(self.camera_ref, "set_exposure_time", None)):
+                                try:
+                                    self.camera_ref.set_exposure_time(parameters)
+                                except Exception as e:
+                                    exception_metadata = (type(e).__name__, str(e), traceback.format_exc())
+                                    print("Encountered Exception:", exception_metadata, flush=True)
+                                self.trigger_data.set()
+                        else:
+                            print("Camera NOT RECOGNIZED the command:", command, flush=True)
                     # Some reporting of not recognized commands
                     else:
-                        print("Camera received NOT RECOGNIZED command:", command, flush=True)
+                        print("Camera NOT RECOGNIZED the command:", command, flush=True)
                 # Handling exceptions by the getting the commands from the queue
                 except (Empty, Full):
                     self.data_queue.put_nowait(Exception("Queue with commands or empty, either full. The CameraWrapper Process stopped"))

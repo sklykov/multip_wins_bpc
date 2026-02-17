@@ -65,14 +65,14 @@ else:
 # %% Local imports
 if __name__ == "__main__" or __name__ == Path(__file__).stem or __name__ == "__mp_main__":
     from containers.adjust_sizes_ctrls_win import AdjustSizesWin
-    # from containers.spinbox_wrapper import SpinboxWrapper
+    from containers.camera_settings import CamSettings
     from utils.utility_funcs import clean_mp_queue
     from camera.camera_wrapper import CameraWrapper, cameras_ctrl_types
 else:
     from .containers.adjust_sizes_ctrls_win import AdjustSizesWin
     from .utils.utility_funcs import clean_mp_queue
     from .camera.camera_wrapper import CameraWrapper, cameras_ctrl_types
-    # from .containers.spinbox_wrapper import SpinboxWrapper
+    from .containers.camera_settings import CamSettings
 
 # Switch on interactive behaviour of matplotlib only if it's not switched on
 if not plt.isinteractive():
@@ -134,12 +134,11 @@ class MainCtrlUI(base_class):
         if self.image_figure_axes is None:
             self.image_figure_axes = self.image_figure.add_subplot(); self.image_figure_axes.axis('off'); self.image_figure.tight_layout()
             self.image_figure.subplots_adjust(left=0, bottom=0, right=1, top=1)  # remove white borders
-            # self.image_figure_axes.format_coord = self.format_coord
             self.image_figure_axes.format_cursor_data = lambda: ''  # remove pixel value in [...] on a widget
 
         # Program parameters, variables
         self.snaps_stream_flag = False; self.snaps_stream_task = None; self.record_flag = False; self.block_btns_flag = False
-        self.retain_resizable_flag = False; self.show_image_task = None; self.fast_fps_overhead = 0
+        self.retain_resizable_flag = False; self.show_image_task = None; self.fast_fps_overhead = 0; self.camera_settings_win = None
         self.fps_snaps_stream = 0; self.ring_fps_buffer = np.zeros((5, )); self.index_fps_buffer = 0
 
         # Select the camera from the list
@@ -283,7 +282,7 @@ class MainCtrlUI(base_class):
                 received_data = self.data_from_camera.get_nowait()
                 if isinstance(received_data, np.ndarray):
                     self.current_image = received_data; self.snap_image_obtained = True; self.display_image = True
-                    # Check # of acquired images for retrieving measured FPS
+                    # Check number of acquired images for retrieving measured FPS
                     self.acquired_images += 1   # count number of acquired images
                     if self.acquired_images > 10_000_001:  # auto reset large accumulated # of images
                         self.acquired_images = 1
@@ -319,7 +318,7 @@ class MainCtrlUI(base_class):
                         elif self.fps > 100:
                             self.fast_fps_overhead = 5
                     # schedule asynchronous call to show an image with some delays for making GUI more stable / responsive
-                    self.show_image_task = self.after(7 + self.fast_fps_overhead, self.show_image)
+                    self.show_image_task = self.after(4 + self.fast_fps_overhead, self.show_image)
                 else:
                     print("Received from the camera:", received_data, flush=True)
                     self.current_image = None; self.display_image = False
@@ -349,7 +348,6 @@ class MainCtrlUI(base_class):
             self.snap_stream_btn.configure(style=self.snap_stream_off_btn_style_name, text=self.snap_stream_off_text)
             if self.snaps_stream_task is None:
                 self.pause_snaps_stream = False  # set not to pause repeating assigning the tasks
-                self.send_cmd2camera("Start Snap Stream")
                 self.snaps_stream_task = self.after(15, self.run_snap_stream)
             self.menubar.delete(0, "end")  # delete all entries in menu, effectively hide all menu entries
             self.master.resizable(False, False); self.windows_resizable = False  # make window not resizable forcibly
@@ -364,14 +362,13 @@ class MainCtrlUI(base_class):
             if self.show_image_task is not None:
                 self.after_cancel(self.show_image_task); time.sleep(self.sleep_time_actions_ms); self.show_image_task = None
             self.record_stream_btn.configure(state="disabled"); self.fast_fps_overhead = 0  # back to the default value
-            self.send_cmd2camera("Stop Snap Stream")
             # Enable labels in Settings menu
             for label in self.labels_actions_menu:
                 self.actions_menu.entryconfig(label, state="normal")
             self.snap_stream_btn.configure(style=self.snap_stream_on_btn_style_name, text=self.snap_stream_on_text)
             self.unlock_ui_btns(); self.master.resizable(self.retain_resizable_flag, self.retain_resizable_flag)
             self.windows_resizable = self.retain_resizable_flag  # make window resizable
-            self.master.wm_overrideredirect(False)   # restore moving window around
+            self.master.wm_overrideredirect(False)   # restore ability to move window around
             self.menubar.add_cascade(label="Settings", menu=self.actions_menu)  # restore menubar with adjust size option
         self.focus_force()
 
@@ -467,6 +464,14 @@ class MainCtrlUI(base_class):
         """
         if len(self.camera_settings.keys()) == 0:
             self.send_cmd2camera("Open Settings")  # call special method to open some native camera settings controlling window (OpenCV)
+        else:
+            if self.camera_settings_win is None:
+                self.camera_settings_win = CamSettings(self)
+            else:
+                if self.camera_settings_win.winfo_exists():
+                    self.camera_settings_win.focus_set()
+                else:
+                    del self.camera_settings_win; self.camera_settings_win = CamSettings(self)
 
     # %% Show acquired image
     def show_image(self):
@@ -502,13 +507,12 @@ class MainCtrlUI(base_class):
                     elif img_shape_len == 3:
                         h, w, _ = self.current_image.shape
                     if self.img_h != h or self.img_w != w:
-                        # self.refresh_graph()  # refresh container for plotting image with changed width and height
+                        self.refresh_graph()  # refresh container for plotting image with changed width and height
                         self.img_h = h; self.img_w = w
                 # Initialize the AxesImage if this function called 1st time
                 if self.image_figure_axes is None:
                     self.image_figure_axes = self.image_figure.add_subplot(); self.image_figure_axes.axis('off')
-                    self.image_figure.tight_layout()
-                    self.image_figure.subplots_adjust(left=0, bottom=0, right=1, top=1)  # remove white borders
+                    self.image_figure.tight_layout(); self.image_figure.subplots_adjust(left=0, bottom=0, right=1, top=1)  # remove borders
                 if self.imshowing is None:
                     if img_shape_len == 2:
                         self.imshowing = self.image_figure_axes.imshow(self.current_image, cmap='gray', interpolation='none',
@@ -517,17 +521,29 @@ class MainCtrlUI(base_class):
                         self.imshowing = self.image_figure_axes.imshow(self.current_image, interpolation='none')
                     else:
                         self.imshowing = self.image_figure_axes.imshow(self.current_image)
-                    # self.imshowing.format_cursor_data = self.cursor_wrapper  # remove pixel value in [...] on a widget
                     self.imshowing.set_data(self.current_image)  # set data for AxesImage for updating image content
                 else:
                     self.imshowing.set_data(self.current_image)  # set data for AxesImage for updating image content
                     self.imshowing.set_clim(vmin=self.min_pixel_value, vmax=self.max_pixel_value)
                 self.image_canvas.draw_idle()  # schedule only update, more responsive
-                # assuming that image intensities are integer values (float image is [0, 1] range of pixel values)
+                # assuming that image intensities are integer values (float image is in the [0, 1] range of pixel values)
                 if isinstance(self.max_pixel_value, float) and self.max_pixel_value > 1.1:
                     self.max_pixel_value = int(np.round(self.max_pixel_value, 0))
                     self.min_pixel_value = int(np.round(self.max_pixel_value, 0))
             self.display_image = False
+
+    def refresh_graph(self):
+        """
+        Functionality for refresh graph if image changed width / height.
+
+        Returns
+        -------
+        None.
+
+        """
+        if self.imshowing is not None:
+            self.image_figure.clear(); self.image_figure_axes = self.image_figure.add_subplot(); self.image_figure_axes.axis('off')
+            self.image_figure.tight_layout(); self.image_figure.subplots_adjust(left=0, bottom=0, right=1, top=1); self.imshowing = None
 
     # %% Camera selection
     def change_active_camera(self, selected_camera):
@@ -619,6 +635,8 @@ class MainCtrlUI(base_class):
         """
         self.snap_image_btn.config(state="disabled"); self.camera_selector.config(state="disabled")
         self.cam_settings_btn.configure(state="disabled"); self.update(); self.block_btns_flag = True
+        if self.camera_settings_win is not None and self.camera_settings_win.winfo_exists():
+            self.camera_settings_win.lock_unlock_buttons()
 
     def unlock_ui_btns(self):
         """
@@ -631,6 +649,8 @@ class MainCtrlUI(base_class):
         """
         self.snap_image_btn.config(state="normal"); self.camera_selector.config(state="normal")
         self.cam_settings_btn.configure(state="normal"); self.update(); self.block_btns_flag = False
+        if self.camera_settings_win is not None and self.camera_settings_win.winfo_exists():
+            self.camera_settings_win.lock_unlock_buttons()
 
     # %% Adjusting GUI
     def adjust_sizes(self):

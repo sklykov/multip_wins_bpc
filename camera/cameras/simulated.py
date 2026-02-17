@@ -26,8 +26,9 @@ __all__ = ['SimulatedCamera']
 class SimulatedCamera(AbstractCamera):
     """Simulated camera with the noise simulation."""
 
-    available_camera_settings : dict = {"Exposure Time": {"min": 1, "max": 2000, "type": int, "current": 50, "unit": "ms", "step": 1},
-                                        "Max Acq. Random Delay": {"min": 0, "max": 11, "type": int, "current": 3, "unit": "ms", "step": 1}}
+    # for type below it can be also "float"
+    available_camera_settings : dict = {"Exposure Time": {"min": 1, "max": 2000, "type": "int", "current": 50, "unit": "ms", "step": 1},
+                                        "Max Acq. Random Delay": {"min": 0, "max": 11, "type": "int", "current": 3, "unit": "ms", "step": 1}}
 
     def __init__(self):
         self.exposure_time = self.available_camera_settings["Exposure Time"]["current"]
@@ -106,6 +107,27 @@ class SimulatedCamera(AbstractCamera):
 
         """
         pass
+
+    def set_exposure_time(self, exp_time_ms: int):
+        """
+        Set exposure time of a camera.
+
+        Parameters
+        ----------
+        exp_time_ms : int
+            Provided by a wrapper and in turn by a control window.
+
+        Returns
+        -------
+        None.
+
+        """
+        self.lock_camera_settings = True  # flag for possible reusage for locking other requests (if any)
+        if not isinstance(exp_time_ms, int):
+            exp_time_ms = int(round(exp_time_ms))
+        self.exposure_time = exp_time_ms  # assuming UI already implemeted in range checks
+        self.available_camera_settings["Exposure Time"]["current"] = exp_time_ms
+        self.lock_camera_settings = False
 
     def lock_unlock_settings(self, lock_state: bool):
         """
