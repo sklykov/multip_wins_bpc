@@ -13,6 +13,7 @@ if __name__ != "__main__" and __name__ != "__mp_main__":
     # See default 'SimulatedCamera' for example of implementation
     from .simulated import SimulatedCamera
     from .laptop_embedded import EmbeddedLaptopCamera
+    from .basler_area_cam import BaslerAreaCamera
     # Automatuc augmentation of __all__ attribute for auto-exporting classes
     cameras_cls_names = [camera_class for camera_class in locals().keys() if "Camera" in camera_class]
     if len(cameras_cls_names) > 0:

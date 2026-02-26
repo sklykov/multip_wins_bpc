@@ -34,7 +34,7 @@ class SimulatedCamera(AbstractCamera):
         self.exposure_time = self.available_camera_settings["Exposure Time"]["current"]
         self.acq_random_delay = self.available_camera_settings["Max Acq. Random Delay"]["current"]
         self.lock_camera_settings = False  # flag for locking possibility to set anything
-        print("Simulated Camera class initialized", flush=True); time.sleep(self.exposure_time/1000)
+        time.sleep(self.exposure_time/1000)
 
     def camera_type() -> str:
         """

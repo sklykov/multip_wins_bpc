@@ -98,7 +98,6 @@ class CameraWrapper(Process):
                 self.lifo_queues = lifo_queues
         # Check that the camera type is supported (could be duplicated from the main script)
         self.supported_cameras = cameras_ctrl_types  # can be checked / loaded from the configuration
-        print("Supported cameras:", cameras_ctrl_types, flush=True)
         if camera_type in self.supported_cameras:
             self.camera_type = camera_type; self.camera_supported = True
             self.camera_settings = cameras_settings[self.supported_cameras.index(self.camera_type)]
@@ -132,13 +131,13 @@ class CameraWrapper(Process):
                 self.camera_initialized = self.camera_ref.initialize()  # explicit initialization method
                 # Dev Note about putting time.sleep() below - if the scripts launched in Python debugger by Visual Studio Code
                 if self.camera_initialized:
-                    self.data_queue.put_nowait("Initialized"); time.sleep(self.sleep_time_actions_ms); self.trigger_data.set()
+                    self.data_queue.put_nowait("Opened"); time.sleep(self.sleep_time_actions_ms); self.trigger_data.set()
                 else:
                     report = self.camera_ref.initialization_status()
-                    self.data_queue.put_nowait("NOT Initialized. Problem report:\n" + report)
+                    self.data_queue.put_nowait("Camera NOT Opened. Problem report:\n" + report)
                     time.sleep(self.sleep_time_actions_ms); self.trigger_data.set()
             else:
-                self.initialized = False  # if there is no initialization logic, by default set to False
+                self.initialized = False; self.data_queue.put_nowait("Camera not supported"); self.trigger_data.set()
 
         # Loop for checking the commands from the controlling script and handling them
         while self.initialized and self.camera_initialized:

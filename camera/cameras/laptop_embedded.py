@@ -40,7 +40,7 @@ class EmbeddedLaptopCamera(AbstractCamera):
 
     def __init__(self):
         self.camera_index = 0  # default camera index
-        self.camera_handle = None; self.exp_t_changeable = False; self.lock_camera_settings = False
+        self.camera_handle = None; self.lock_camera_settings = False
         self.exp_t_ms = 0; self.img_width = 0; self.img_height = 0
         self.camera_report = ""  # default - empty report (no problems)
         self.platform = str(platform.system()).lower()
@@ -56,12 +56,12 @@ class EmbeddedLaptopCamera(AbstractCamera):
 
     def camera_type() -> str:
         """
-        Return "Laptop_Embedded".
+        Return displayed on UI camera name used as a camera type.
 
         Returns
         -------
         str
-            Camera name.
+            Camera name for UI (type).
 
         """
         return "Laptop_Emb"
@@ -73,7 +73,7 @@ class EmbeddedLaptopCamera(AbstractCamera):
         Returns
         -------
         dict
-            DESCRIPTION.
+            Available for control camera settings.
 
         """
         return cls.available_camera_settings
@@ -114,7 +114,7 @@ class EmbeddedLaptopCamera(AbstractCamera):
         """
         return self.camera_report
 
-    def snap_image(self) -> np.ndarray:
+    def snap_image(self) -> Union[np.ndarray, None]:
         """
         Generate random (noisy) picture.
 

@@ -92,7 +92,7 @@ class MainCtrlUI(base_class):
         self._relaunch = False  # flag for relaunching again this frame with changed showing parameters
         self.focus_set()  # switch focus to the Frame, working if launched from Python console
         self.master.title("Main Controlling Window"); self.screen_width = self.master.winfo_screenwidth()
-        self.screen_height = self.master.winfo_screenheight()
+        self.screen_height = self.master.winfo_screenheight(); self.print_supported_cameras = True
         # Below - put the main window on the (+x, +y) coordinate away from the top left of the screen
         self.master.geometry(f"+{self.screen_width//4}+{self.screen_height//5}")
         self._changed_dpi = changed_dpi  # for disabling width / height controlling of an image
@@ -217,8 +217,7 @@ class MainCtrlUI(base_class):
         # Disabling some buttons at the start
         self.record_stream_btn.configure(state="disabled"); self.lock_ui_btns()
 
-        # Open Simulated camera as a default
-        self.open_camera()
+        self.open_camera()  # Open Simulated camera as a default
 
     # %% Open camera
     def open_camera(self):
@@ -234,33 +233,36 @@ class MainCtrlUI(base_class):
         self.camera_process = CameraWrapper(camera_type=self.selected_camera.get(), commands2camera=self.commands2camera,
                                             trigger_commands=self.trigger_commands, data_camera=self.data_from_camera,
                                             trigger_data_camera=self.trigger_camera_data)
+        if self.print_supported_cameras:
+            print("Supported Cameras: ", self.camera_process.supported_cameras, flush=True); self.print_supported_cameras = False
         self.camera_process.start(); time.sleep(self.sleep_time_actions_ms)  # starting the CameraWrapper Process loop
         self.camera_status_label.config(text=self.camera_transit_text, style=self.camera_transition_style); self.update()
         trigger_set = False  # for getting the confirmation that the trigger is set
         self.camera_opened = False  # flag for showing that the camera is initialized
-        while not self.camera_opened and not trigger_set:
-            trigger_set = self.trigger_camera_data.wait(timeout=8.5)  # wait for set trigger with timeout of ... seconds
-            if trigger_set:
-                self.trigger_camera_data.clear()  # set to the default state
-                if not self.data_from_camera.empty():
-                    if self.data_from_camera.get_nowait() == "Initialized":
-                        print(f"{self.selected_camera.get()} Camera Opened", flush=True); self.camera_opened = True
-                        self.camera_status_label.config(text=self.camera_act_text, style=self.camera_init_status_style)
-                        self.camera_settings = self.camera_process.camera_settings
-                        if len(self.camera_settings.keys()) > 0:
-                            print(f"Controllable {self.selected_camera.get()} Camera Parameters:", list(self.camera_settings.keys()),
-                                  flush=True)
-                        else:
-                            print(f"{self.selected_camera.get()} Camera Parameters are accessible on the separate GUI", flush=True)
-                        self.unlock_ui_btns()
-                    elif self.data_from_camera.get_nowait() == "NOT Initialized":
-                        print(f"{self.selected_camera.get()} Camera Opened", flush=True); self.camera_opened = False
-                        self.camera_status_label.config(text=self.camera_inact_text, style=self.camera_error_status_style)
-                        trigger_set = True  # for stopping the loop
-            if not trigger_set or not self.camera_opened:
-                print(f"Trigger from {self.selected_camera.get()} Camera not received")
-                self.camera_status_label.config(text=self.camera_inact_text, style=self.camera_error_status_style)
-                trigger_set = True  # for stopping the loop
+        trigger_set = self.trigger_camera_data.wait(timeout=9.0)  # wait for set trigger with timeout of ... seconds
+        if trigger_set:
+            camera_report = ""; self.trigger_camera_data.clear()  # set to the default state
+            if not self.data_from_camera.empty():
+                try:
+                    camera_report = self.data_from_camera.get_nowait()
+                except Empty:
+                    camera_report = "NOT Opened"
+                if camera_report == "Opened":
+                    print(f"{self.selected_camera.get()} Camera Opened", flush=True); self.camera_opened = True
+                    self.camera_status_label.config(text=self.camera_act_text, style=self.camera_init_status_style)
+                    self.camera_settings = self.camera_process.camera_settings
+                    if len(self.camera_settings.keys()) > 0:
+                        print(f"Controllable {self.selected_camera.get()} Camera Parameters:", list(self.camera_settings.keys()),
+                              flush=True)
+                    else:
+                        print(f"{self.selected_camera.get()} Camera Parameters are accessible on the separate GUI", flush=True)
+                    self.unlock_ui_btns()
+                elif "NOT Opened" in camera_report or camera_report == "":
+                    print(f"{self.selected_camera.get()} " + camera_report, flush=True); self.camera_opened = False
+                    self.camera_status_label.config(text=self.camera_inact_text, style=self.camera_error_status_style)
+        if not trigger_set:
+            print(f"Trigger from {self.selected_camera.get()} Camera Process not received, connection timeout")
+            self.camera_status_label.config(text=self.camera_inact_text, style=self.camera_error_status_style); self.update()
 
     # %% Acquisition
     def snap_image(self):
@@ -561,7 +563,7 @@ class MainCtrlUI(base_class):
 
         """
         if not selected_camera == self.active_camera:  # check that other than the current active camera selected
-            self.lock_ui_btns(); print("Selected camera:", selected_camera, flush=True)
+            self.lock_ui_btns(); print("\nSelected camera:", selected_camera, flush=True)
             self.img_w = None; self.img_h = None  # put image WxH to the default values
             if not self.check_implementation(selected_camera):
                 print(f"The required implementation for the '{selected_camera}' camera not found. \nThe previously active camera remained")
@@ -570,7 +572,7 @@ class MainCtrlUI(base_class):
                 # below - close + clean logic and after reinitialize everything
                 self.close_camera(); self.clean_queues_events(); self.open_camera()
                 if not self.camera_opened:
-                    print("Camera not opened, going back to the Simulated", flush=True)
+                    print("\nCamera not opened, going back to the Simulated", flush=True)
                     self.close_camera(); self.clean_queues_events()
                     self.selected_camera.set(self.supported_cameras[0]); self.open_camera()
                 else:
