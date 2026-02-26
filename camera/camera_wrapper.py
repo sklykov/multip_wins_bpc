@@ -202,6 +202,8 @@ class CameraWrapper(Process):
                             self.close()  # close the camera wrapper
                             self.initialized = False  # set the flag for the loop to stop it
                             self.data_queue.put_nowait("Stopped"); time.sleep(self.sleep_time_actions_ms); self.trigger_data.set()
+                        elif command == "Get Updated Settings":
+                            self.data_queue.put_nowait(self.camera_ref.available_camera_settings); self.trigger_data.set()
                         else:
                             print("Camera NOT RECOGNIZED the command:", command, flush=True)
                     # Commands with parameters

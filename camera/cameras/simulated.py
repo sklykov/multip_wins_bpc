@@ -27,7 +27,7 @@ class SimulatedCamera(AbstractCamera):
     """Simulated camera with the noise simulation."""
 
     # for type below it can be also "float"
-    available_camera_settings : dict = {"Exposure Time": {"min": 1, "max": 2000, "type": "int", "current": 50, "unit": "ms", "step": 1},
+    available_camera_settings : dict = {"Exposure Time": {"min": 1, "max": 2000, "type": "int", "current": 40, "unit": "ms", "step": 1},
                                         "Max Acq. Random Delay": {"min": 0, "max": 11, "type": "int", "current": 3, "unit": "ms", "step": 1}}
 
     def __init__(self):

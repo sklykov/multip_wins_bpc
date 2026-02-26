@@ -17,6 +17,8 @@ Main GUI script - visualization of images stream (based on tkinter GUI library).
 #       - has an issue with resizing of a widget - container for an acquired image;
 #       - requires exchanging all standard widgets to its counterparts;
 
+# TODO: move snap_image() method to a Thread for separation of acquiring and updating of an image
+
 # %% Global imports
 from tkinter import Frame, Menu, Tk, font, LEFT, TOP, BOTH, StringVar
 from tkinter.ttk import Button, Style, Label, OptionMenu
@@ -101,6 +103,7 @@ class MainCtrlUI(base_class):
         self.min_exp_time_ms = 1; self.max_exp_time_ms = 2000  # default range of limits on exposure time
         self.pause_snaps_stream = True  # default flag for preventing too many assigned tasks if pause should be made in a snaps stream
         self.camera_controls_opened = False  # default for checking that camera controls window is opened
+        self._image_ui_updating_lock = False
 
         # Default values of GUI provided by tkinter (for adjusting on the separate window)
         self.main_font = font.nametofont("TkDefaultFont"); self.entry_font = font.nametofont("TkTextFont")
@@ -250,10 +253,9 @@ class MainCtrlUI(base_class):
                 if camera_report == "Opened":
                     print(f"{self.selected_camera.get()} Camera Opened", flush=True); self.camera_opened = True
                     self.camera_status_label.config(text=self.camera_act_text, style=self.camera_init_status_style)
-                    self.camera_settings = self.camera_process.camera_settings
+                    self.camera_settings = self.camera_process.camera_settings.copy()
                     if len(self.camera_settings.keys()) > 0:
-                        print(f"Controllable {self.selected_camera.get()} Camera Parameters:", list(self.camera_settings.keys()),
-                              flush=True)
+                        print(f"Controllable {self.selected_camera.get()} Camera Parameters:", list(self.camera_settings.keys()), flush=True)
                     else:
                         print(f"{self.selected_camera.get()} Camera Parameters are accessible on the separate GUI", flush=True)
                     self.unlock_ui_btns()
@@ -261,7 +263,7 @@ class MainCtrlUI(base_class):
                     print(f"{self.selected_camera.get()} " + camera_report, flush=True); self.camera_opened = False
                     self.camera_status_label.config(text=self.camera_inact_text, style=self.camera_error_status_style)
         if not trigger_set:
-            print(f"Trigger from {self.selected_camera.get()} Camera Process not received, connection timeout")
+            print(f"Trigger from {self.selected_camera.get()} Camera Process not received, connection timeout", flush=True)
             self.camera_status_label.config(text=self.camera_inact_text, style=self.camera_error_status_style); self.update()
 
     # %% Acquisition
@@ -276,12 +278,17 @@ class MainCtrlUI(base_class):
         """
         if self.snaps_stream_flag and not self.record_flag:  # estimation of FPS for snaps stream should be performed in the main UI
             t1 = time.perf_counter()  # will be used for setting FPS setting
-        self.send_cmd2camera("Snap"); trigger_set = self.trigger_camera_data.wait(timeout=5.0)
-        time.sleep(self.sleep_time_actions_ms/1.65)  # Dev. Note: pausing by time.sleep() makes the snaps stream mode stable
+        self.send_cmd2camera("Snap"); trigger_set = self.trigger_camera_data.wait(timeout=6.0)
+        time.sleep(self.sleep_time_actions_ms/1.5)  # Dev. Note: pausing by time.sleep() makes the snaps stream mode stable
         if trigger_set:
             self.trigger_camera_data.clear()  # set to the default state
             try:
-                received_data = self.data_from_camera.get_nowait()
+                # Guard the case that image is put into Queue but still not available even trigger was set
+                if self.data_from_camera.empty():
+                    n_checks = 1; max_n_checks = 500
+                    while self.data_from_camera.empty() and n_checks <= max_n_checks:
+                        n_checks += 1; time.sleep(self.sleep_time_actions_ms*0.75)
+                received_data = self.data_from_camera.get_nowait()  # extract image from Queue
                 if isinstance(received_data, np.ndarray):
                     self.current_image = received_data; self.snap_image_obtained = True; self.display_image = True
                     # Check number of acquired images for retrieving measured FPS
@@ -293,7 +300,7 @@ class MainCtrlUI(base_class):
                         if self.fps == 0:
                             self.fps = int(round(1.0/passed_s, 0))  # first estimation of FPS
                             self.fps_label.config(text=f"Measured FPS: {self.fps}")  # 1st estimation
-                            self.after(5, self.send_fps_to_camera_wrapper)  # send measured FPS to a camera ctrl module
+                            self.after(17, self.send_fps_to_camera_wrapper)  # send measured FPS to a camera ctrl module
                             self.index_fps_buffer = 0  # set to the default value
                             self.ring_fps_buffer[self.index_fps_buffer] = self.fps; self.index_fps_buffer += 1
                         else:
@@ -302,34 +309,36 @@ class MainCtrlUI(base_class):
                                 self.ring_fps_buffer[self.index_fps_buffer] = self.fps; self.index_fps_buffer += 1
                             elif self.index_fps_buffer == len(self.ring_fps_buffer) - 1:
                                 self.ring_fps_buffer[self.index_fps_buffer] = self.fps
-                                self.fps = int(round((np.mean(self.ring_fps_buffer)), 0)); self.index_fps_buffer = 0
+                                self.fps = int(round(np.mean(self.ring_fps_buffer))); self.index_fps_buffer = 0
                         if self.acquired_images % 5 == 0:  # update FPS label each 5 fresh images
                             self.fps_label.config(text=f"Measured FPS: {self.fps}")
-                            self.after(5, self.send_fps_to_camera_wrapper)  # send measured FPS to a camera ctrl module
+                            self.after(17, self.send_fps_to_camera_wrapper)  # send measured FPS to a camera ctrl module
                         # Adjust overhead for showing image query - for keeping UI responsive
                         if self.fps < 10:
                             self.fast_fps_overhead = 0
                         elif self.fps >= 10:
-                            self.fast_fps_overhead = 1
-                        elif self.fps > 20:
-                            self.fast_fps_overhead = 2
-                        elif self.fps > 50:
                             self.fast_fps_overhead = 3
-                        elif self.fps > 75:
-                            self.fast_fps_overhead = 4
-                        elif self.fps > 100:
-                            self.fast_fps_overhead = 5
+                        elif self.fps >= 20:
+                            self.fast_fps_overhead = 6
+                        elif self.fps >= 50:
+                            self.fast_fps_overhead = 9
                     # schedule asynchronous call to show an image with some delays for making GUI more stable / responsive
-                    self.show_image_task = self.after(4 + self.fast_fps_overhead, self.show_image)
+                    if not self._image_ui_updating_lock:
+                        self.show_image_task = self.after(11 + self.fast_fps_overhead, self.show_image)
                 else:
-                    print("Received from the camera:", received_data, flush=True)
+                    print("Received from the camera not image data:", received_data, flush=True)
                     self.current_image = None; self.display_image = False
             except Empty:
                 print("No Image received from Queue, but the trigger is set", flush=True)
+                time.sleep(5*self.sleep_time_actions_ms); self.data_from_camera = clean_mp_queue(self.data_from_camera)
                 self.current_image = None; self.display_image = False
         else:
             print("Something wrong with the Snap Image logic, the TIMEOUT happened in a trigger wait function", flush=True)
             self.current_image = None; self.display_image = False
+        # Finish snaps stream if no image acquired
+        if self.snaps_stream_flag and self.current_image is None:
+            print("Current image not received, some error during Snaps Stream", flush=True)
+            self.pause_snaps_stream = True; self.after(2, self.snap_stream)
 
     def snap_stream(self):
         """
@@ -342,18 +351,15 @@ class MainCtrlUI(base_class):
         """
         self.snaps_stream_flag = not self.snaps_stream_flag  # change the flag
         if self.snaps_stream_flag:
-            self.record_stream_btn.configure(state="normal"); self.lock_ui_btns()
+            self.record_stream_btn.configure(state="normal"); self.lock_ui_btns(); self.snap_stream_btn.configure(state="normal")
             self.retain_resizable_flag = self.windows_resizable  # save the previously stored value
             # Disable labels in Settings menu
             for label in self.labels_actions_menu:
                 self.actions_menu.entryconfig(label, state="disabled")
             self.snap_stream_btn.configure(style=self.snap_stream_off_btn_style_name, text=self.snap_stream_off_text)
-            if self.snaps_stream_task is None:
-                self.pause_snaps_stream = False  # set not to pause repeating assigning the tasks
-                self.snaps_stream_task = self.after(15, self.run_snap_stream)
             self.menubar.delete(0, "end")  # delete all entries in menu, effectively hide all menu entries
             self.master.resizable(False, False); self.windows_resizable = False  # make window not resizable forcibly
-            self.master.wm_overrideredirect(True)  # prevent moving window around, making the UI more stable
+            self.master.wm_overrideredirect(True) # prevent moving window around, making the UI more stable
         else:
             if self.record_flag:
                 self.record_stream()
@@ -363,6 +369,7 @@ class MainCtrlUI(base_class):
                 self.after_cancel(self.snaps_stream_task); time.sleep(self.sleep_time_actions_ms); self.snaps_stream_task = None
             if self.show_image_task is not None:
                 self.after_cancel(self.show_image_task); time.sleep(self.sleep_time_actions_ms); self.show_image_task = None
+            self._image_ui_updating_lock = False
             self.record_stream_btn.configure(state="disabled"); self.fast_fps_overhead = 0  # back to the default value
             # Enable labels in Settings menu
             for label in self.labels_actions_menu:
@@ -372,7 +379,10 @@ class MainCtrlUI(base_class):
             self.windows_resizable = self.retain_resizable_flag  # make window resizable
             self.master.wm_overrideredirect(False)   # restore ability to move window around
             self.menubar.add_cascade(label="Settings", menu=self.actions_menu)  # restore menubar with adjust size option
-        self.focus_force()
+        self.update(); self.focus_set(); self.focus_force()  # update UI first, after assign task
+        if self.snaps_stream_flag and self.snaps_stream_task is None:
+            self.pause_snaps_stream = False  # set not to pause repeating assigning the tasks
+            self.snaps_stream_task = self.after(20, self.run_snap_stream)
 
     def run_snap_stream(self):
         """
@@ -386,7 +396,10 @@ class MainCtrlUI(base_class):
         self.snap_image()  # explicit call for snap function
         if self.snaps_stream_flag and not self.pause_snaps_stream:
             # below - schedule next task, even fast updating should make UI unstable, if show image task queried not so fast
-            self.snaps_stream_task = self.after(2, self.run_snap_stream)
+            if "Basler" in self.selected_camera.get():
+                self.snaps_stream_task = self.after(9, self.run_snap_stream)  # apparently, some delay should be included between tasks
+            else:
+                self.snaps_stream_task = self.after(1, self.run_snap_stream)
 
     # %% Recording
     def record_stream(self):
@@ -425,8 +438,7 @@ class MainCtrlUI(base_class):
         None.
 
         """
-        self.send_cmd2camera("Get FPS"); trigger_set = self.trigger_camera_data.wait(timeout=5.0)
-        time.sleep(self.sleep_time_actions_ms/1.65)  # Dev. Note: pausing by time.sleep() makes the snaps stream mode stable
+        self.send_cmd2camera("Get FPS"); trigger_set = self.trigger_camera_data.wait(timeout=5.0); time.sleep(self.sleep_time_actions_ms/1.5)
         if trigger_set:
             self.trigger_camera_data.clear()  # set to the default state
             try:
@@ -440,7 +452,7 @@ class MainCtrlUI(base_class):
                 print("No integer FPS received from Queue, but the trigger is set", flush=True)
                 self.fps = 0; self.fps_label.config(text=f"Measured FPS: {self.fps}")
         else:
-            print("Something wrong with the Query FPS logic, the TIMEOUT happened in a trigger wait function", flush=True)
+            print("Something wrong with querying FPS logic, the TIMEOUT happened in a trigger wait function", flush=True)
             self.fps = 0; self.fps_label.config(text=f"Measured FPS: {self.fps}")
         self.update()
 
@@ -475,6 +487,33 @@ class MainCtrlUI(base_class):
                 else:
                     del self.camera_settings_win; self.camera_settings_win = CamSettings(self)
 
+    def retrieve_updated_settings(self):
+        """
+        Get updated settings from a camera.
+
+        Returns
+        -------
+        None.
+
+        """
+        self.send_cmd2camera("Get Updated Settings"); trigger_set = self.trigger_camera_data.wait(timeout=5.0)
+        time.sleep(self.sleep_time_actions_ms/1.5)
+        if trigger_set:
+            self.trigger_camera_data.clear()  # set to the default state
+            try:
+                received_data = self.data_from_camera.get_nowait()
+                if isinstance(received_data, dict):
+                    self.camera_settings = received_data
+                    if self.camera_settings_win is not None and self.camera_settings_win.winfo_exists():
+                        self.camera_settings_win.update_shown_values()
+                else:
+                    print("Received from the camera (not settings (dict)):", received_data, flush=True)
+            except Empty:
+                print("No dict Settings received, but the trigger is set", flush=True)
+                self.fps = 0; self.fps_label.config(text=f"Measured FPS: {self.fps}")
+        else:
+            print("Something wrong with querying Updated Settings, the TIMEOUT happened in a trigger wait function", flush=True)
+
     # %% Show acquired image
     def show_image(self):
         """
@@ -485,7 +524,7 @@ class MainCtrlUI(base_class):
         None.
 
         """
-        # time.sleep(self.image_refresh_delay)
+        self._image_ui_updating_lock = True
         if self.display_image:
             if self.current_image is not None and isinstance(self.current_image, np.ndarray):
                 # Precalculate min / max pixel value on the image
@@ -508,6 +547,8 @@ class MainCtrlUI(base_class):
                         h, w = self.current_image.shape
                     elif img_shape_len == 3:
                         h, w, _ = self.current_image.shape
+                    else:
+                        print("Error with Image shape definition: it's not in [2, 3] range", flush=True)
                     if self.img_h != h or self.img_w != w:
                         self.refresh_graph()  # refresh container for plotting image with changed width and height
                         self.img_h = h; self.img_w = w
@@ -528,11 +569,8 @@ class MainCtrlUI(base_class):
                     self.imshowing.set_data(self.current_image)  # set data for AxesImage for updating image content
                     self.imshowing.set_clim(vmin=self.min_pixel_value, vmax=self.max_pixel_value)
                 self.image_canvas.draw_idle()  # schedule only update, more responsive
-                # assuming that image intensities are integer values (float image is in the [0, 1] range of pixel values)
-                if isinstance(self.max_pixel_value, float) and self.max_pixel_value > 1.1:
-                    self.max_pixel_value = int(np.round(self.max_pixel_value, 0))
-                    self.min_pixel_value = int(np.round(self.max_pixel_value, 0))
             self.display_image = False
+        self._image_ui_updating_lock = False
 
     def refresh_graph(self):
         """
@@ -563,7 +601,7 @@ class MainCtrlUI(base_class):
 
         """
         if not selected_camera == self.active_camera:  # check that other than the current active camera selected
-            self.lock_ui_btns(); print("\nSelected camera:", selected_camera, flush=True)
+            self.lock_ui_btns(); print("\nSelected camera:", selected_camera, flush=True); self._image_ui_updating_lock = False
             self.img_w = None; self.img_h = None  # put image WxH to the default values
             if not self.check_implementation(selected_camera):
                 print(f"The required implementation for the '{selected_camera}' camera not found. \nThe previously active camera remained")
@@ -636,7 +674,8 @@ class MainCtrlUI(base_class):
 
         """
         self.snap_image_btn.config(state="disabled"); self.camera_selector.config(state="disabled")
-        self.cam_settings_btn.configure(state="disabled"); self.update(); self.block_btns_flag = True
+        self.snap_stream_btn.config(state="disabled"); self.cam_settings_btn.configure(state="disabled")
+        self.update(); self.block_btns_flag = True
         if self.camera_settings_win is not None and self.camera_settings_win.winfo_exists():
             self.camera_settings_win.lock_unlock_buttons()
 
@@ -650,7 +689,8 @@ class MainCtrlUI(base_class):
 
         """
         self.snap_image_btn.config(state="normal"); self.camera_selector.config(state="normal")
-        self.cam_settings_btn.configure(state="normal"); self.update(); self.block_btns_flag = False
+        self.snap_stream_btn.configure(state="normal"); self.cam_settings_btn.configure(state="normal")
+        self.update(); self.block_btns_flag = False
         if self.camera_settings_win is not None and self.camera_settings_win.winfo_exists():
             self.camera_settings_win.lock_unlock_buttons()
 
@@ -681,7 +721,7 @@ class MainCtrlUI(base_class):
         None.
 
         """
-        self.plot_widget.destroy(); self.buttons_frame.pack_forget()
+        self.plot_widget.destroy(); self.buttons_frame.pack_forget(); self._image_ui_updating_lock = False
         del self.imshowing; del self.image_figure_axes; del self.image_figure
         self.image_figure = pltFigure.Figure(figsize=(self.figure_size_w, self.figure_size_h))  # empty figure with changed
         self.image_canvas = FigureCanvasTkAgg(self.image_figure, master=self); self.plot_widget = self.image_canvas.get_tk_widget()
@@ -736,7 +776,7 @@ class MainCtrlUI(base_class):
                     if isinstance(received_data, str):
                         print(f"{self.active_camera} Camera", received_data, "and Closed")
                     else:
-                        print("Received from the camera:", received_data)
+                        print("Received data before closing the camera:", received_data)
                     if self.camera_process.is_alive():
                         self.camera_process.join(2.0)
                 except Empty:

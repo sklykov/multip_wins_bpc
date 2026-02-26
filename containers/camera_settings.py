@@ -78,17 +78,31 @@ class CamSettings(Toplevel):
         """
         if self.exp_time_wrapper.validate_input():
             self.master.lock_ui_btns(); self.lock_unlock_buttons()
-            self.master.send_cmd2camera(("Set Exposure Time", int(self.exp_time_value.get())))
+            if self.master.camera_settings["Exposure Time"]["type"] == "int":
+                self.master.send_cmd2camera(("Set Exposure Time", int(self.exp_time_value.get())))
+            elif self.master.camera_settings["Exposure Time"]["type"] == "float":
+                self.master.send_cmd2camera(("Set Exposure Time", float(self.exp_time_value.get())))
             trigger_set = self.master.trigger_camera_data.wait(timeout=0.5)
             if trigger_set:
-                self.master.trigger_camera_data.clear()  # set to the default state
-                print("Set Exp Time:", self.exp_time_value.get(), self.master.camera_settings["Exposure Time"]["unit"], flush=True)
+                self.master.trigger_camera_data.clear(); self.master.retrieve_updated_settings()
             else:
                 print("Something wrong with the Set Exposure Time logic, the TIMEOUT happened in a trigger wait function", flush=True)
             self.master.fps_snaps_stream = 0; self.master.ring_fps_buffer = np.zeros((5, )); self.master.index_fps_buffer = 0
             self.master.acquired_images = 0; self.master.fps = 0
             self.master.unlock_ui_btns(); self.lock_unlock_buttons()
         self.focus_set()
+
+    def update_shown_values(self):
+        """
+        Update values according to the stored settings on the main window.
+
+        Returns
+        -------
+        None.
+
+        """
+        if "Exposure Time" in self.master.camera_settings.keys():
+            self.exp_time_value.set(self.master.camera_settings["Exposure Time"]["current"])
 
     def lock_unlock_buttons(self):
         """
