@@ -68,11 +68,11 @@ else:
 if __name__ == "__main__" or __name__ == Path(__file__).stem or __name__ == "__mp_main__":
     from containers.adjust_sizes_ctrls_win import AdjustSizesWin
     from containers.camera_settings import CamSettings
-    from utils.utility_funcs import clean_mp_queue
+    from camera.utility_funcs import clean_mp_queue
     from camera.camera_wrapper import CameraWrapper, cameras_ctrl_types
 else:
     from .containers.adjust_sizes_ctrls_win import AdjustSizesWin
-    from .utils.utility_funcs import clean_mp_queue
+    from .camera.utility_funcs import clean_mp_queue
     from .camera.camera_wrapper import CameraWrapper, cameras_ctrl_types
     from .containers.camera_settings import CamSettings
 
@@ -98,7 +98,7 @@ class MainCtrlUI(base_class):
         # Below - put the main window on the (+x, +y) coordinate away from the top left of the screen
         self.master.geometry(f"+{self.screen_width//4}+{self.screen_height//5}")
         self._changed_dpi = changed_dpi  # for disabling width / height controlling of an image
-        self.focus_force(); self.padx = 8; self.pady = 8; self.sleep_time_actions_ms = 0.004
+        self.focus_force(); self.padx = 8; self.pady = 8; self.sleep_time_actions_ms = 4*1E-3
         self.exp_time_ms = 50  # default value for exposure time - 100 ms, equal to 10 FPS
         self.min_exp_time_ms = 1; self.max_exp_time_ms = 2000  # default range of limits on exposure time
         self.pause_snaps_stream = True  # default flag for preventing too many assigned tasks if pause should be made in a snaps stream
@@ -142,7 +142,6 @@ class MainCtrlUI(base_class):
         # Program parameters, variables
         self.snaps_stream_flag = False; self.snaps_stream_task = None; self.record_flag = False; self.block_btns_flag = False
         self.retain_resizable_flag = False; self.show_image_task = None; self.fast_fps_overhead = 0; self.camera_settings_win = None
-        self.fps_snaps_stream = 0; self.ring_fps_buffer = np.zeros((5, )); self.index_fps_buffer = 0
 
         # Select the camera from the list
         self.buttons_frame = Frame(master=self)  # for placing all buttons in it
@@ -295,33 +294,20 @@ class MainCtrlUI(base_class):
                     self.acquired_images += 1   # count number of acquired images
                     if self.acquired_images > 10_000_001:  # auto reset large accumulated # of images
                         self.acquired_images = 1
+                    # Retrieve calculated on a camera controlling class FPS
+                    if self.fps == 0:
+                        self.query_fps()
+                    if self.acquired_images % 10 == 0:  # update FPS label each ... acquired images
+                        self.query_fps()
+                    # Add some overhead for updating UI in case of fast FPS used
                     if self.snaps_stream_flag and not self.record_flag:
-                        passed_s = round((time.perf_counter() - t1), 9)
-                        if self.fps == 0:
-                            self.fps = int(round(1.0/passed_s, 0))  # first estimation of FPS
-                            self.fps_label.config(text=f"Measured FPS: {self.fps}")  # 1st estimation
-                            self.after(17, self.send_fps_to_camera_wrapper)  # send measured FPS to a camera ctrl module
-                            self.index_fps_buffer = 0  # set to the default value
-                            self.ring_fps_buffer[self.index_fps_buffer] = self.fps; self.index_fps_buffer += 1
-                        else:
-                            # below - averaging 5 stored measured FPS for more stable estimation of it
-                            if self.index_fps_buffer < len(self.ring_fps_buffer) - 1:
-                                self.ring_fps_buffer[self.index_fps_buffer] = self.fps; self.index_fps_buffer += 1
-                            elif self.index_fps_buffer == len(self.ring_fps_buffer) - 1:
-                                self.ring_fps_buffer[self.index_fps_buffer] = self.fps
-                                self.fps = int(round(np.mean(self.ring_fps_buffer))); self.index_fps_buffer = 0
-                        if self.acquired_images % 5 == 0:  # update FPS label each 5 fresh images
-                            self.fps_label.config(text=f"Measured FPS: {self.fps}")
-                            self.after(17, self.send_fps_to_camera_wrapper)  # send measured FPS to a camera ctrl module
                         # Adjust overhead for showing image query - for keeping UI responsive
-                        if self.fps < 10:
+                        if self.fps < 20:
                             self.fast_fps_overhead = 0
-                        elif self.fps >= 10:
-                            self.fast_fps_overhead = 3
                         elif self.fps >= 20:
-                            self.fast_fps_overhead = 6
+                            self.fast_fps_overhead = 2
                         elif self.fps >= 50:
-                            self.fast_fps_overhead = 9
+                            self.fast_fps_overhead = 4
                     # schedule asynchronous call to show an image with some delays for making GUI more stable / responsive
                     if not self._image_ui_updating_lock:
                         self.show_image_task = self.after(11 + self.fast_fps_overhead, self.show_image)
@@ -396,10 +382,7 @@ class MainCtrlUI(base_class):
         self.snap_image()  # explicit call for snap function
         if self.snaps_stream_flag and not self.pause_snaps_stream:
             # below - schedule next task, even fast updating should make UI unstable, if show image task queried not so fast
-            if "Basler" in self.selected_camera.get():
-                self.snaps_stream_task = self.after(9, self.run_snap_stream)  # apparently, some delay should be included between tasks
-            else:
-                self.snaps_stream_task = self.after(1, self.run_snap_stream)
+            self.snaps_stream_task = self.after(1, self.run_snap_stream)
 
     # %% Recording
     def record_stream(self):
@@ -455,17 +438,6 @@ class MainCtrlUI(base_class):
             print("Something wrong with querying FPS logic, the TIMEOUT happened in a trigger wait function", flush=True)
             self.fps = 0; self.fps_label.config(text=f"Measured FPS: {self.fps}")
         self.update()
-
-    def send_fps_to_camera_wrapper(self):
-        """
-        Send measured actual FPS for storing it in camera_wrapper module and use it for recording.
-
-        Returns
-        -------
-        None.
-
-        """
-        self.send_cmd2camera(("Measured FPS", self.fps))
 
     def access_camera_settings(self):
         """
@@ -564,7 +536,6 @@ class MainCtrlUI(base_class):
                         self.imshowing = self.image_figure_axes.imshow(self.current_image, interpolation='none')
                     else:
                         self.imshowing = self.image_figure_axes.imshow(self.current_image)
-                    self.imshowing.set_data(self.current_image)  # set data for AxesImage for updating image content
                 else:
                     self.imshowing.set_data(self.current_image)  # set data for AxesImage for updating image content
                     self.imshowing.set_clim(vmin=self.min_pixel_value, vmax=self.max_pixel_value)
@@ -768,26 +739,26 @@ class MainCtrlUI(base_class):
         if self.snaps_stream_flag:
             self.snap_stream()  # simulates click on stop stream button
         if self.camera_opened:
-            self.camera_status_label.config(text=self.camera_act_text, style=self.camera_init_status_style); self.update()
+            self.camera_status_label.config(text=self.camera_act_text, style=self.camera_init_status_style); self.update(); self.fps = 0
             self.send_cmd2camera("Stop"); trigger_set = self.trigger_camera_data.wait(5.0); time.sleep(self.sleep_time_actions_ms)
             if trigger_set:
                 try:
                     received_data = self.data_from_camera.get_nowait()
                     if isinstance(received_data, str):
-                        print(f"{self.active_camera} Camera", received_data, "and Closed")
+                        print(f"{self.active_camera} Camera", received_data, "and Closed", flush=True)
                     else:
-                        print("Received data before closing the camera:", received_data)
+                        print("Received data before closing the camera:", received_data, flush=True)
                     if self.camera_process.is_alive():
                         self.camera_process.join(2.0)
                 except Empty:
-                    print("Something went wrong with the communication, the CameraWrapper Process will be killed if it's still alive")
+                    print("Something went wrong CameraWrapper Process, it will be killed if it's still alive", flush=True)
                     if self.camera_process.is_alive():
                         self.camera_process.kill()
             else:
-                print("Something wrong with the closing logic, the TIMEOUT happened in wait function")
-                self.camera_process.kill()
+                print("Something wrong with the closing logic, the TIMEOUT happened in wait function", flush=True); self.camera_process.kill()
             self.camera_status_label.config(text=self.camera_inact_text, style=self.camera_error_status_style)
             self.camera_opened = False  # default flag for opened / closed separate controlling Process for a camera
+            self.reinitialize_image_figure(True)  # refresh image containers
 
     def destroy(self):
         """

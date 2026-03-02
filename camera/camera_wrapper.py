@@ -22,8 +22,10 @@ import traceback
 # %% Local imports
 if __name__ == "__main__" or __name__ == Path(__file__).stem or __name__ == "__mp_main__":
     from cameras import *
+    from utility_funcs import clean_mp_queue
 else:
     from .cameras import *
+    from .utility_funcs import clean_mp_queue
 local_modules = locals()  # get as a dictionary the locally imported modules for defining the content of "cameras" module
 # Below the automatic exploring of the imported modules and Associated names. Class definition should contain "Camera" in a class name
 cameras_cls_names = [camera_class for camera_class in local_modules.keys() if "Camera" in camera_class]
@@ -86,9 +88,10 @@ class CameraWrapper(Process):
         self.script_path = Path(__file__).parent.parent.absolute()  # for possible access the API python wrappers
         self.sleep_time_actions_ms = 0.004  # for putting artificial delay between setting the trigger and sending the data
         self.record_flag = False  # flag for start recording streamed single snapped images
-        self.fps = None  # will automatically measure and correct FPS (NOTE if there is direct control for setting exposure time)
+        self.fps = 0  # will automatically measure and correct FPS, used for recording by relying on cv2.VideoWriter methods
         self.images2record = None  # placeholder for queue with images for recording
         self.video_file_path = None  # placeholder for a video file path used for recording
+        self.n_images_fps_buffer = 10; self.ring_fps_buffer = np.zeros((self.n_images_fps_buffer, )); self.index_fps_buffer = 0
         # Checking input parameters
         if data_triggered_queues is not None and queues_triggers is not None:
             if len(data_triggered_queues) > 0 and len(queues_triggers) > 0 and len(data_triggered_queues) == len(queues_triggers):
@@ -150,25 +153,26 @@ class CameraWrapper(Process):
                     command = self.commands_queue.get_nowait()  # Handling the commands from the main script
                     # print("Camera received a command:", command)
                     if isinstance(command, str):  # command provided as a simple string
-                        # Snap single image
                         if command == "Snap" or command == "Snap Image":
-                            # t1 = time.perf_counter()  # will be used for setting FPS setting
+                            t1 = time.perf_counter()  # will be used for counting FPS
                             image = self.camera_ref.snap_image()  # calling the implemented method from an abstract class
-                            # passed_s = round((time.perf_counter() - t1), 9)
+                            passed_s = round((time.perf_counter() - t1), 9)
+                            if self.fps == 0:
+                                self.fps = int(round(1.0/passed_s, 0))  # first estimation of FPS
+                                self.index_fps_buffer = 0  # set to the default value
+                                self.ring_fps_buffer[self.index_fps_buffer] = self.fps; self.index_fps_buffer += 1
                             if self.record_flag:
-                                # passed_ms = int(round(1000.0*(time.perf_counter() - t1), 0))  # measured time inms for single acquisition
                                 timestamp_str = datetime.fromtimestamp(time.time()).strftime('%H:%M:%S.%f')[:-3]
-                                # print("Passed ms:", passed_ms, flush=True)
-                                # print("Timestamp: ", timestamp_str, flush=True)
-                                pil_img = Image.fromarray(image)  # conversion numpy array to PIL image
-                                draw_handle = ImageDraw.Draw(pil_img)  # draw handle for put text
-                                font = ImageFont.truetype(font='arial.ttf', size=22)  # embedded fonts
-                                position = (25, 25)  # (x, y) position of writing
-                                draw_handle.text(position, timestamp_str, fill=0, font=font)  # Add black text to a gray image
-                                image = np.array(pil_img)  # conversion PIL image to np.ndarray
                                 if not self.images2record.full():
-                                    self.images2record.put_nowait(image)
-                            # print("Received image shape in Camera class:", image.shape, flush=True)
+                                    self.images2record.put_nowait((image, timestamp_str))  # put numpy array and timestamp str for record
+                            else:
+                                # below - averaging 5 stored measured FPS for more stable estimation of it
+                                fps = int(round(1.0/passed_s, 0))  # FPS calculation for averaging
+                                if self.index_fps_buffer < len(self.ring_fps_buffer) - 1:
+                                    self.ring_fps_buffer[self.index_fps_buffer] = fps; self.index_fps_buffer += 1
+                                elif self.index_fps_buffer == len(self.ring_fps_buffer) - 1:
+                                    self.ring_fps_buffer[self.index_fps_buffer] = fps
+                                    self.fps = int(round(np.mean(self.ring_fps_buffer))); self.index_fps_buffer = 0
                             if image is not None:
                                 self.data_queue.put_nowait(image)
                             else:
@@ -182,25 +186,15 @@ class CameraWrapper(Process):
                             self.record_flag = False; time.sleep(2.5*self.sleep_time_actions_ms)
                             if self.record_thread.is_alive():
                                 self.record_thread.join(timeout=0.2)
-                            if not self.images2record.empty():
-                                while not self.images2record.empty():
-                                    try:
-                                        self.images2record.get_nowait()
-                                    except Empty:
-                                        break
-                            del self.images2record; self.images2record = None
+                            self.images2record = clean_mp_queue(self.images2record); del self.images2record; self.images2record = None
                             print("Stop recording", flush=True)
                         elif command == "Get FPS":
-                            if self.fps is not None:
-                                self.data_queue.put_nowait(self.fps)
-                            else:
-                                self.data_queue.put_nowait(0)  # default value if FPS not measured
-                            self.trigger_data.set()  # set the trigger that the data is available for the calling main module
+                            self.data_queue.put_nowait(self.fps); self.trigger_data.set()  # set a trigger - some data is available for read
                         elif command == "Open Settings":
-                            self.camera_ref.access_camera_settings()  # call native method for adjusting camera settings (OpenCV)
+                            self.camera_ref.access_camera_settings(); self.fps = 0  # call native method for applying camera settings (OpenCV)
                         elif command == "Stop" or command == "Quit":
                             self.close()  # close the camera wrapper
-                            self.initialized = False  # set the flag for the loop to stop it
+                            self.initialized = False; self.fps = 0  # set the flag for the loop to stop it
                             self.data_queue.put_nowait("Stopped"); time.sleep(self.sleep_time_actions_ms); self.trigger_data.set()
                         elif command == "Get Updated Settings":
                             self.data_queue.put_nowait(self.camera_ref.available_camera_settings); self.trigger_data.set()
@@ -209,13 +203,10 @@ class CameraWrapper(Process):
                     # Commands with parameters
                     elif isinstance(command, tuple):
                         (command_str, parameters) = command  # unpacking tuple
-                        # FPS measured on the main UI set here, it's not for controlling it but for providing it to a camera class
-                        if command_str == "Measured FPS":
-                            self.fps = int(parameters)  # saved measured FPS
-                        elif command_str == "Set Exposure Time":
+                        if command_str == "Set Exposure Time":
                             if callable(getattr(self.camera_ref, "set_exposure_time", None)):
                                 try:
-                                    self.camera_ref.set_exposure_time(parameters)
+                                    self.camera_ref.set_exposure_time(parameters); self.fps = 0
                                 except Exception as e:
                                     exception_metadata = (type(e).__name__, str(e), traceback.format_exc())
                                     print("Encountered Exception:", exception_metadata, flush=True)
@@ -250,8 +241,13 @@ class CameraWrapper(Process):
         first_step = True  # flag to create the video file handler
         while self.record_flag:
             if self.images2record is not None and not self.images2record.empty():
-                image2record = self.images2record.get_nowait()
-                # print("Get for recording an image:", image2record.shape, flush=True)
+                image, timestamp_str = self.images2record.get_nowait()
+                pil_img = Image.fromarray(image)  # conversion numpy array to PIL image
+                draw_handle = ImageDraw.Draw(pil_img)  # draw handle for put text
+                font = ImageFont.truetype(font='arial.ttf', size=22)  # embedded fonts
+                position = (25, 25)  # (x, y) position of writing
+                draw_handle.text(position, timestamp_str, fill=0, font=font)  # Add black text to a gray image
+                image2record = np.array(pil_img)  # conversion PIL image to np.ndarray
                 if first_step:  # prepare video file to write in
                     self.cv2_codec = cv2.VideoWriter_fourcc(*'jpeg')  # 'mp4v', 'jpeg' for .mov file
                     # self.cv2_codec = cv2.VideoWriter_fourcc(*'MJPG')  # for .avi file: xvid, mp4, mj

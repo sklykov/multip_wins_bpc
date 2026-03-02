@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
 """Export from this module."""
 
-__all__ = ['camera_wrapper', 'camera_settings']
+__all__ = ['camera_wrapper', 'utility_funcs']
 

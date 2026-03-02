@@ -36,7 +36,7 @@ __all__ = ['BaslerAreaCamera']
 class BaslerAreaCamera(AbstractCamera):
     """Basler area camera basic control."""
 
-    available_camera_settings : dict = {"Exposure Time": {"min": 0.01, "max": 500.0, "type": "float", "current": 50.0,
+    available_camera_settings : dict = {"Exposure Time": {"min": 0.01, "max": 500.0, "type": "float", "current": 25.0,
                                                           "unit": "ms", "step": 0.01}}
 
     def __init__(self):
@@ -90,6 +90,7 @@ class BaslerAreaCamera(AbstractCamera):
                         self.camera_handle.PixelFormat.SetValue("Mono12")  # default for the monocolor camera types (can be changed)
                         self.camera_handle.ExposureAuto.SetValue("Off")  # switch off auto exposure (setting automatically exposure time)
                         self.camera_handle.ExposureTime.SetValue(1E3*self.exp_t_ms)  # set fixed exposure time - default
+                        print("Basler camera initialized", flush=True)
                         self.camera_report = ""; return True
                     else:
                         self.camera_report = "Basler camera not opened (maybe is already connected)"; return False
@@ -125,8 +126,11 @@ class BaslerAreaCamera(AbstractCamera):
 
         """
         current_image = None  # default value
+        t1 = time.perf_counter()
         with self.camera_handle.GrabOne(self.standard_timeout_snap_ms) as res:
             current_image = res.Array.copy()
+        print("Basler Acq. takes ms:", int(round(1E3*(time.perf_counter() - t1))), flush=True)
+        # print("Image type:", type(current_image), flush=True)  # debugging
         return current_image
 
     def set_exposure_time(self, exp_time_ms: float):
@@ -146,7 +150,7 @@ class BaslerAreaCamera(AbstractCamera):
         self.lock_camera_settings = True  # flag for possible reusage for locking other requests (if any)
         if not isinstance(exp_time_ms, float):
             exp_time_ms = round(float(exp_time_ms), 2)
-        self.camera_handle.ExposureTime.SetValue(1E3*exp_time_ms); self.exp_t_ms = self.camera_handle.ExposureTime.GetValue()
+        self.camera_handle.ExposureTime.SetValue(1E3*exp_time_ms); self.exp_t_ms = self.camera_handle.ExposureTime.GetValue()*1E-3
         self.available_camera_settings["Exposure Time"]["current"] = self.exp_t_ms
         print("Set on Basler Camera Exp.Time [ms]:", self.exp_t_ms, flush=True)
         self.lock_camera_settings = False

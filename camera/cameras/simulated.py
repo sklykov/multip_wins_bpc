@@ -28,7 +28,7 @@ class SimulatedCamera(AbstractCamera):
 
     # for type below it can be also "float"
     available_camera_settings : dict = {"Exposure Time": {"min": 1, "max": 2000, "type": "int", "current": 40, "unit": "ms", "step": 1},
-                                        "Max Acq. Random Delay": {"min": 0, "max": 11, "type": "int", "current": 3, "unit": "ms", "step": 1}}
+                                        "Max Acq. Random Delay": {"min": 0, "max": 11, "type": "int", "current": 0, "unit": "ms", "step": 1}}
 
     def __init__(self):
         self.exposure_time = self.available_camera_settings["Exposure Time"]["current"]
@@ -93,7 +93,9 @@ class SimulatedCamera(AbstractCamera):
             2D matrix as the image.
 
         """
-        exp_time_offset = random.randint(0, self.acq_random_delay)  # random selection of integer delay for acquisition
+        exp_time_offset = 0  # default offset - no random FPS instability
+        if self.acq_random_delay > 0:
+            exp_time_offset = random.randint(0, self.acq_random_delay)  # random selection of integer delay for acquisition
         time.sleep((self.exposure_time + exp_time_offset)/1000)  # wait for an exposure time + some overhead
         return np.random.randint(0, high=255, size=(480, 640), dtype='uint8')
 
