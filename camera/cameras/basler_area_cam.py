@@ -42,7 +42,7 @@ class BaslerAreaCamera(AbstractCamera):
     def __init__(self):
         self.camera_handle = None; self.camera_report = ""  # default - empty report (no problems)
         self.exp_t_ms = self.available_camera_settings["Exposure Time"]["current"]; self.img_width = 0; self.img_height = 0
-        self.standard_delay_ms = 3; self.standard_delay_s = self.standard_delay_ms*1E-3; self.standard_timeout_snap_ms = 1000
+        self.standard_delay_ms = 3; self.standard_delay_s = self.standard_delay_ms*1E-3
 
     def camera_type() -> str:
         """
@@ -126,11 +126,8 @@ class BaslerAreaCamera(AbstractCamera):
 
         """
         current_image = None  # default value
-        t1 = time.perf_counter()
-        with self.camera_handle.GrabOne(self.standard_timeout_snap_ms) as res:
+        with self.camera_handle.GrabOne(1000) as res:
             current_image = res.Array.copy()
-        print("Basler Acq. takes ms:", int(round(1E3*(time.perf_counter() - t1))), flush=True)
-        # print("Image type:", type(current_image), flush=True)  # debugging
         return current_image
 
     def set_exposure_time(self, exp_time_ms: float):
@@ -150,6 +147,7 @@ class BaslerAreaCamera(AbstractCamera):
         self.lock_camera_settings = True  # flag for possible reusage for locking other requests (if any)
         if not isinstance(exp_time_ms, float):
             exp_time_ms = round(float(exp_time_ms), 2)
+        self.camera_handle.ExposureAuto.SetValue("Off")
         self.camera_handle.ExposureTime.SetValue(1E3*exp_time_ms); self.exp_t_ms = self.camera_handle.ExposureTime.GetValue()*1E-3
         self.available_camera_settings["Exposure Time"]["current"] = self.exp_t_ms
         print("Set on Basler Camera Exp.Time [ms]:", self.exp_t_ms, flush=True)

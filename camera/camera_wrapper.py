@@ -166,7 +166,7 @@ class CameraWrapper(Process):
                                 if not self.images2record.full():
                                     self.images2record.put_nowait((image, timestamp_str))  # put numpy array and timestamp str for record
                             else:
-                                # below - averaging 5 stored measured FPS for more stable estimation of it
+                                # below - averaging ... stored measured FPS for more stable estimation of it
                                 fps = int(round(1.0/passed_s, 0))  # FPS calculation for averaging
                                 if self.index_fps_buffer < len(self.ring_fps_buffer) - 1:
                                     self.ring_fps_buffer[self.index_fps_buffer] = fps; self.index_fps_buffer += 1

@@ -17,8 +17,6 @@ Main GUI script - visualization of images stream (based on tkinter GUI library).
 #       - has an issue with resizing of a widget - container for an acquired image;
 #       - requires exchanging all standard widgets to its counterparts;
 
-# TODO: move snap_image() method to a Thread for separation of acquiring and updating of an image
-
 # %% Global imports
 from tkinter import Frame, Menu, Tk, font, LEFT, TOP, BOTH, StringVar
 from tkinter.ttk import Button, Style, Label, OptionMenu
@@ -141,7 +139,7 @@ class MainCtrlUI(base_class):
 
         # Program parameters, variables
         self.snaps_stream_flag = False; self.snaps_stream_task = None; self.record_flag = False; self.block_btns_flag = False
-        self.retain_resizable_flag = False; self.show_image_task = None; self.fast_fps_overhead = 0; self.camera_settings_win = None
+        self.retain_resizable_flag = False; self.show_image_task = None; self.camera_settings_win = None
 
         # Select the camera from the list
         self.buttons_frame = Frame(master=self)  # for placing all buttons in it
@@ -196,7 +194,7 @@ class MainCtrlUI(base_class):
 
         # FPS indicator reported after acquisition
         self.acquired_images = 0; self.fps = 0  # variables
-        self.fps_label = Label(master=self.buttons_frame, text=f"Measured FPS: {self.fps}")  # label for showing measured FPS
+        self.fps_label = Label(master=self.buttons_frame, text=f"Measured Acq. FPS: {self.fps}")  # label for showing measured FPS
 
         # Placing GUI elements in the container (Frame) which in turn is placed below along with the plot_widget
         self.camera_selector_frame.pack(side=TOP, padx=self.padx, pady=self.pady//2)
@@ -218,7 +216,6 @@ class MainCtrlUI(base_class):
 
         # Disabling some buttons at the start
         self.record_stream_btn.configure(state="disabled"); self.lock_ui_btns()
-
         self.open_camera()  # Open Simulated camera as a default
 
     # %% Open camera
@@ -275,10 +272,9 @@ class MainCtrlUI(base_class):
         None.
 
         """
-        if self.snaps_stream_flag and not self.record_flag:  # estimation of FPS for snaps stream should be performed in the main UI
-            t1 = time.perf_counter()  # will be used for setting FPS setting
+        # t1 = time.perf_counter()  # will be used for setting FPS setting
         self.send_cmd2camera("Snap"); trigger_set = self.trigger_camera_data.wait(timeout=6.0)
-        time.sleep(self.sleep_time_actions_ms/1.5)  # Dev. Note: pausing by time.sleep() makes the snaps stream mode stable
+        time.sleep(self.sleep_time_actions_ms*0.25)  # Dev. Note: pausing by time.sleep() makes the snaps stream mode stable
         if trigger_set:
             self.trigger_camera_data.clear()  # set to the default state
             try:
@@ -286,7 +282,7 @@ class MainCtrlUI(base_class):
                 if self.data_from_camera.empty():
                     n_checks = 1; max_n_checks = 500
                     while self.data_from_camera.empty() and n_checks <= max_n_checks:
-                        n_checks += 1; time.sleep(self.sleep_time_actions_ms*0.75)
+                        n_checks += 1; time.sleep(self.sleep_time_actions_ms*0.25)
                 received_data = self.data_from_camera.get_nowait()  # extract image from Queue
                 if isinstance(received_data, np.ndarray):
                     self.current_image = received_data; self.snap_image_obtained = True; self.display_image = True
@@ -299,18 +295,9 @@ class MainCtrlUI(base_class):
                         self.query_fps()
                     if self.acquired_images % 10 == 0:  # update FPS label each ... acquired images
                         self.query_fps()
-                    # Add some overhead for updating UI in case of fast FPS used
-                    if self.snaps_stream_flag and not self.record_flag:
-                        # Adjust overhead for showing image query - for keeping UI responsive
-                        if self.fps < 20:
-                            self.fast_fps_overhead = 0
-                        elif self.fps >= 20:
-                            self.fast_fps_overhead = 2
-                        elif self.fps >= 50:
-                            self.fast_fps_overhead = 4
                     # schedule asynchronous call to show an image with some delays for making GUI more stable / responsive
                     if not self._image_ui_updating_lock:
-                        self.show_image_task = self.after(11 + self.fast_fps_overhead, self.show_image)
+                        self.show_image_task = self.after(1, self.show_image)
                 else:
                     print("Received from the camera not image data:", received_data, flush=True)
                     self.current_image = None; self.display_image = False
@@ -381,8 +368,7 @@ class MainCtrlUI(base_class):
         """
         self.snap_image()  # explicit call for snap function
         if self.snaps_stream_flag and not self.pause_snaps_stream:
-            # below - schedule next task, even fast updating should make UI unstable, if show image task queried not so fast
-            self.snaps_stream_task = self.after(1, self.run_snap_stream)
+            self.snaps_stream_task = self.after(25, self.run_snap_stream)  # it's only simulation of button clicks, not the real "Live" mode
 
     # %% Recording
     def record_stream(self):
@@ -428,12 +414,12 @@ class MainCtrlUI(base_class):
                 received_data = self.data_from_camera.get_nowait()
                 if isinstance(received_data, int):
                     self.fps = received_data  # store received FPS
-                    self.fps_label.config(text=f"Measured FPS: {self.fps}")  # update FPS label
+                    self.fps_label.config(text=f"Measured Acq. FPS: {self.fps}")  # update FPS label
                 else:
                     print("Received from the camera (not integer FPS):", received_data, flush=True)
             except Empty:
                 print("No integer FPS received from Queue, but the trigger is set", flush=True)
-                self.fps = 0; self.fps_label.config(text=f"Measured FPS: {self.fps}")
+                self.fps = 0; self.fps_label.config(text=f"Measured Acq. FPS: {self.fps}")
         else:
             print("Something wrong with querying FPS logic, the TIMEOUT happened in a trigger wait function", flush=True)
             self.fps = 0; self.fps_label.config(text=f"Measured FPS: {self.fps}")
@@ -499,10 +485,31 @@ class MainCtrlUI(base_class):
         self._image_ui_updating_lock = True
         if self.display_image:
             if self.current_image is not None and isinstance(self.current_image, np.ndarray):
-                # Precalculate min / max pixel value on the image
-                self.min_pixel_value = np.min(self.current_image); self.max_pixel_value = np.max(self.current_image)
-                # Check that the image sizes changed or not, and update the graph accordingly
                 img_shape_len = len(self.current_image.shape)  # length of image shape, assuming 2 for grayscaled image, 3 - for RGB (BGR)
+                # Convert originally acquired gray scaled image to uint16 - standard format for displaying
+                if img_shape_len == 2:
+                    self.min_pixel_value = np.min(self.current_image); self.max_pixel_value = np.max(self.current_image)
+                    img2display = self.current_image.copy()
+                    if isinstance(self.current_image, np.floating):
+                        if self.min_pixel_value < 0.0:
+                            img2display += self.min_pixel_value
+                            if np.max(img2display) <= 1.0:
+                                img2display *= np.iinfo(np.uint16).max - 1  # autostretch range, keep it safe by -1
+                        else:
+                            if self.max_pixel_value <= 1.0:
+                                img2display *= np.iinfo(np.uint16).max - 1
+                    elif isinstance(self.current_image, np.integer):
+                        img2display = img2display.astype(dtype=np.float64)
+                        if self.min_pixel_value < 0:
+                            img2display += self.min_pixel_value
+                            if np.max(img2display) > np.iinfo(np.uint16).max:
+                                img2display /= np.max(img2display); img2display *= np.iinfo(np.uint16).max - 1
+                        else:
+                            if self.max_pixel_value > np.iinfo(np.uint16).max:
+                                img2display /= np.max(img2display); img2display *= np.iinfo(np.uint16).max - 1
+                    img2display = np.round(img2display, 0).astype(dtype=np.uint16)
+                    img2display_min = np.min(img2display); img2display_max = np.max(img2display)
+                # Check that the image sizes changed or not, and update the graph accordingly
                 if self.img_w is None and self.img_h is None:
                     if img_shape_len == 2:
                         self.img_h, self.img_w = self.current_image.shape
@@ -530,15 +537,18 @@ class MainCtrlUI(base_class):
                     self.image_figure.tight_layout(); self.image_figure.subplots_adjust(left=0, bottom=0, right=1, top=1)  # remove borders
                 if self.imshowing is None:
                     if img_shape_len == 2:
-                        self.imshowing = self.image_figure_axes.imshow(self.current_image, cmap='gray', interpolation='none',
-                                                                       vmin=self.min_pixel_value, vmax=self.max_pixel_value)
+                        self.imshowing = self.image_figure_axes.imshow(img2display, cmap='gray', interpolation='none',
+                                                                       vmin=img2display_min, vmax=img2display_max)
                     elif img_shape_len == 3:
                         self.imshowing = self.image_figure_axes.imshow(self.current_image, interpolation='none')
                     else:
                         self.imshowing = self.image_figure_axes.imshow(self.current_image)
                 else:
-                    self.imshowing.set_data(self.current_image)  # set data for AxesImage for updating image content
-                    self.imshowing.set_clim(vmin=self.min_pixel_value, vmax=self.max_pixel_value)
+                    if img_shape_len == 2:
+                        self.imshowing.set_data(img2display)  # set data for AxesImage for updating image content
+                        self.imshowing.set_clim(vmin=img2display_min, vmax=img2display_max)
+                    else:
+                        self.imshowing.set_data(self.current_image)
                 self.image_canvas.draw_idle()  # schedule only update, more responsive
             self.display_image = False
         self._image_ui_updating_lock = False
@@ -576,7 +586,7 @@ class MainCtrlUI(base_class):
             self.img_w = None; self.img_h = None  # put image WxH to the default values
             if not self.check_implementation(selected_camera):
                 print(f"The required implementation for the '{selected_camera}' camera not found. \nThe previously active camera remained")
-                self.selected_camera.set(self.active_camera)  # set back the active camera and open it
+                self.selected_camera.set(self.active_camera); self.unlock_ui_btns()  # set back the active camera and open it
             else:
                 # below - close + clean logic and after reinitialize everything
                 self.close_camera(); self.clean_queues_events(); self.open_camera()
