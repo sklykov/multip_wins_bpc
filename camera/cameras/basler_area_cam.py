@@ -12,7 +12,7 @@ from typing import Union
 import time
 import traceback
 
-# Basic check that pyopencv library installed
+# Basic check that pypylon library installed
 global pypylon_installed
 pypylon_installed = False
 try:
